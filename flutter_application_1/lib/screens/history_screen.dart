@@ -1,44 +1,80 @@
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
+import '../utils/api_service.dart';
 
-class HistoryScreen extends StatelessWidget {
+class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
 
-  static const _history = [
-    {'station': 'An-Najah EV Station', 'date': 'Apr 4, 2026',  'kwh': '22.4 kWh', 'cost': '56 NIS'},
-    {'station': 'Campus Green Charger','date': 'Apr 2, 2026',  'kwh': '15.1 kWh', 'cost': '22 NIS'},
-    {'station': 'City Mall Charger',   'date': 'Mar 30, 2026', 'kwh': '30.0 kWh', 'cost': '54 NIS'},
-    {'station': 'An-Najah EV Station', 'date': 'Mar 25, 2026', 'kwh': '18.7 kWh', 'cost': '46 NIS'},
-  ];
+  @override
+  State<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends State<HistoryScreen> {
+  List<dynamic> _transactions = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    final res = await ApiService.instance.getTransactions();
+    setState(() {
+      _loading = false;
+      if (res['success']) _transactions = res['data'] ?? [];
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBg,
       appBar: kAppBar('Charging History', context),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(20),
-        itemCount: _history.length,
-        itemBuilder: (_, i) {
-          final h = _history[i];
-          return Container(margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16),
-            decoration: kCardDeco(),
-            child: Row(children: [
-              Container(width: 44, height: 44,
-                  decoration: BoxDecoration(color: kGreen.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(Icons.bolt, color: kGreen, size: 22)),
-              const SizedBox(width: 14),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(h['station']!, style: kTitle(13)),
-                Text(h['date']!, style: kSub(11)),
-              ])),
-              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text(h['kwh']!, style: kTitle(13)),
-                Text(h['cost']!,
-                    style: const TextStyle(color: kGreen, fontSize: 12, fontWeight: FontWeight.w600)),
-              ]),
-            ]));
-        }),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: kGreen))
+          : _transactions.isEmpty
+              ? const Center(child: Text('No history yet', style: TextStyle(color: Colors.grey)))
+              : ListView.builder(
+                  padding: const EdgeInsets.all(20),
+                  itemCount: _transactions.length,
+                  itemBuilder: (_, i) {
+                    final t = _transactions[i];
+                    final amount = (t['amount'] ?? 0).toDouble();
+                    final isCredit = amount >= 0;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(16),
+                      decoration: kCardDeco(),
+                      child: Row(children: [
+                        Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(
+                            color: (isCredit ? kGreen : Colors.red).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            isCredit ? Icons.arrow_downward : Icons.arrow_upward,
+                            color: isCredit ? kGreen : Colors.red, size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(t['label'] ?? '', style: kTitle(13)),
+                          Text(t['type'] ?? '', style: kSub(11)),
+                        ])),
+                        Text(
+                          '${isCredit ? "+" : ""}${amount.toStringAsFixed(0)} NIS',
+                          style: TextStyle(
+                            color: isCredit ? kGreen : Colors.red,
+                            fontSize: 13, fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ]),
+                    );
+                  },
+                ),
     );
   }
 }
