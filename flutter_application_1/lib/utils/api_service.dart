@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -6,10 +8,12 @@ import 'package:http/http.dart' as http;
 //  API SERVICE — ChargeGuard Backend
 // ════════════════════════════════════════
 class ApiService {
-  // Use 10.0.2.2 for Android emulator (maps to host machine's localhost)
-  // Use localhost for iOS simulator
-  // Use your computer's IP (e.g. 192.168.x.x) for physical devices
-  static const String baseUrl = 'http://10.0.2.2:3000/api';
+  // Auto-detect: Android emulator uses 10.0.2.2, everything else uses localhost
+  static String get baseUrl {
+    if (kIsWeb) return 'http://localhost:3000/api';
+    if (Platform.isAndroid) return 'http://10.0.2.2:3000/api';
+    return 'http://localhost:3000/api';
+  }
 
   // Singleton
   static final ApiService instance = ApiService._();
