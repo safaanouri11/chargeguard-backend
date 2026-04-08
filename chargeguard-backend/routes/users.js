@@ -1,6 +1,6 @@
 const router  = require('express').Router();
 const protect = require('../middleware/auth');
-const User    = require('../models/user');
+const User    = require('../models/User');
 // ── GET /api/users/profile ────────────────────────────────
 router.get('/profile', protect, async (req, res) => {
   res.json(req.user);

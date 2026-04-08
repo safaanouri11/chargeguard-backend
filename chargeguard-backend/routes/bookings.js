@@ -2,7 +2,7 @@ const router      = require('express').Router();
 const protect     = require('../middleware/auth');
 const Booking     = require('../models/Booking');
 const Transaction = require('../models/Transaction');
-const User        = require('../models/user');
+const User        = require('../models/User');
 // ── GET /api/bookings ─────────────────────────────────────
 router.get('/', protect, async (req, res) => {
   try {

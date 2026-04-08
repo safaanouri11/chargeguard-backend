@@ -1,6 +1,6 @@
 const router      = require('express').Router();
 const protect     = require('../middleware/auth');
-const User        = require('../models/user');
+const User        = require('../models/User');
 const Transaction = require('../models/Transaction');
 // ── GET /api/payments/transactions ───────────────────────
 router.get('/transactions', protect, async (req, res) => {

@@ -6,7 +6,10 @@ import 'package:http/http.dart' as http;
 //  API SERVICE — ChargeGuard Backend
 // ════════════════════════════════════════
 class ApiService {
-  static const String baseUrl = 'http://localhost:3000/api';
+  // Use 10.0.2.2 for Android emulator (maps to host machine's localhost)
+  // Use localhost for iOS simulator
+  // Use your computer's IP (e.g. 192.168.x.x) for physical devices
+  static const String baseUrl = 'http://10.0.2.2:3000/api';
 
   // Singleton
   static final ApiService instance = ApiService._();
