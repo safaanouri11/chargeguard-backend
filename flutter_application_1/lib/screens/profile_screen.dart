@@ -1,6 +1,6 @@
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../utils/constants.dart';
 import '../utils/app_settings.dart';
 import '../utils/api_service.dart';
@@ -9,7 +9,6 @@ import 'history_screen.dart';
 import 'offers_screen.dart';
 import 'help_support_screen.dart';
 import 'payment_methods_screen.dart';
-import 'camera_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -52,26 +51,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ── Pick Photo ────────────────────────────────────────────
-  void _pickImage(String source) {
-    final input = html.FileUploadInputElement();
-    input.accept   = 'image/*';
-    input.multiple = false;
-    if (source == 'camera') input.setAttribute('capture', 'user');
-    input.click();
-    input.onChange.listen((event) {
-      final file = input.files?.first;
-      if (file == null) return;
-      final reader = html.FileReader();
-      reader.readAsDataUrl(file);
-      reader.onLoad.listen((_) async {
-        final base64 = reader.result as String;
-        setState(() => _imageBase64 = base64);
-        // Save to backend
-        await ApiService.instance.updateProfile({'avatar': base64});
-        if (mounted) Navigator.pop(context);
-        _snack('Photo updated! ✅');
-      });
-    });
+  final _picker = ImagePicker();
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final picked = await _picker.pickImage(source: source, maxWidth: 512, imageQuality: 75);
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      final base64Str = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+      setState(() => _imageBase64 = base64Str);
+      await ApiService.instance.updateProfile({'avatar': base64Str});
+      if (mounted) _snack('Photo updated!');
+    } catch (e) {
+      if (mounted) _snack('Could not pick image');
+    }
   }
 
   void _pickPhoto() {
@@ -99,7 +92,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () {
                   setState(() { _avatarColorIdx = i; _imageBase64 = null; });
                   Navigator.pop(context);
-                  _snack('Avatar updated! ✅');
+                  _snack('Avatar updated!');
                 },
                 child: AnimatedContainer(duration: const Duration(milliseconds: 200),
                   width: sel ? 56 : 46, height: sel ? 56 : 46,
@@ -112,19 +105,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 22),
           Row(children: [
-            Expanded(child: _photoBtn(Icons.camera_alt_outlined, 'Camera', kGreen, () async {
+            Expanded(child: _photoBtn(Icons.camera_alt_outlined, 'Camera', kGreen, () {
               Navigator.pop(context);
-              final result = await Navigator.push<String>(context,
-                  MaterialPageRoute(builder: (_) => const CameraScreen()));
-              if (result != null) {
-                setState(() => _imageBase64 = result);
-                await ApiService.instance.updateProfile({'avatar': result});
-                _snack('Photo updated! ✅');
-              }
+              _pickImage(ImageSource.camera);
             })),
             const SizedBox(width: 12),
-            Expanded(child: _photoBtn(Icons.photo_library_outlined, 'Gallery', Colors.blueAccent,
-                () => _pickImage('gallery'))),
+            Expanded(child: _photoBtn(Icons.photo_library_outlined, 'Gallery', Colors.blueAccent, () {
+              Navigator.pop(context);
+              _pickImage(ImageSource.gallery);
+            })),
             const SizedBox(width: 12),
             Expanded(child: _photoBtn(Icons.delete_outline, 'Remove', Colors.redAccent, () {
               setState(() => _imageBase64 = null);
