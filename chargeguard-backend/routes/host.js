@@ -101,6 +101,24 @@ router.put('/stations/:id/toggle', protect, hostApproved, async function(req, re
     res.status(500).json({ message: err.message });
   }
 });
+// PUT /api/host/stations/:id/occupancy   body: { occupancy: 'free'|'busy'|'offline' }
+router.put('/stations/:id/occupancy', protect, hostApproved, async function(req, res) {
+  try {
+    var allowed = ['free', 'busy', 'offline'];
+    if (!allowed.includes(req.body.occupancy)) {
+      return res.status(400).json({ message: 'occupancy must be one of: ' + allowed.join(', ') });
+    }
+    var station = await Station.findOneAndUpdate(
+      { _id: req.params.id, host: req.user._id },
+      { occupancy: req.body.occupancy, available: req.body.occupancy === 'free' },
+      { new: true }
+    );
+    if (!station) return res.status(404).json({ message: 'Not found' });
+    res.json({ occupancy: station.occupancy, available: station.available });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 // GET /api/host/bookings
 router.get('/bookings', protect, hostApproved, async function(req, res) {
   try {
