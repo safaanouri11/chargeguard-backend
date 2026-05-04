@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 import '../utils/app_settings.dart';
+import '../utils/api_service.dart';
 import 'booking_form_screen.dart';
 
 Color _connColor(String? c) {
@@ -144,7 +145,12 @@ class ChargerDetailScreen extends StatelessWidget {
               'Price: $price NIS/kWh. '
               '${isComingSoon ? "Opening soon." : (isOffline ? "Currently offline." : (ok ? "Currently available." : "Currently in use."))}',
               style: kSub(13)),
-          const SizedBox(height: 28),
+          const SizedBox(height: 24),
+
+          // ── Reviews ───────────────────────────────────────
+          _ReviewsSection(stationId: station['_id'] as String? ?? '',
+              stationName: name),
+          const SizedBox(height: 24),
 
           // ── Book button ───────────────────────────────────
           SizedBox(width: double.infinity, height: 54,
@@ -205,4 +211,214 @@ class ChargerDetailScreen extends StatelessWidget {
         border: Border.all(color: color.withOpacity(0.3))),
     child: Text(text, style: TextStyle(color: color,
         fontSize: 12, fontWeight: FontWeight.w600)));
+}
+
+// ─────────────────────────────────────────────────────────
+//  REVIEWS SECTION
+// ─────────────────────────────────────────────────────────
+class _ReviewsSection extends StatefulWidget {
+  final String stationId;
+  final String stationName;
+  const _ReviewsSection({required this.stationId, required this.stationName});
+  @override
+  State<_ReviewsSection> createState() => _ReviewsSectionState();
+}
+
+class _ReviewsSectionState extends State<_ReviewsSection> {
+  List _reviews = [];
+  double _avg = 0;
+  int _count = 0;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.stationId.isEmpty) {
+      setState(() => _loading = false);
+      return;
+    }
+    final res = await ApiService.instance.getStationReviews(widget.stationId);
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      if (res['success']) {
+        final data = res['data'] as Map<String, dynamic>;
+        _reviews = (data['reviews'] as List?) ?? [];
+        _avg     = (data['avgRating'] as num?)?.toDouble() ?? 0;
+        _count   = (data['count']     as num?)?.toInt()    ?? 0;
+      }
+    });
+  }
+
+  Future<void> _showAddReviewDialog() async {
+    double rating = 5;
+    final ctrl = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: cBg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Rate ${widget.stationName}', style: kTitle(15)),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(mainAxisAlignment: MainAxisAlignment.center, children:
+              List.generate(5, (i) {
+                final filled = (i + 1) <= rating;
+                return GestureDetector(
+                  onTap: () => setS(() => rating = (i + 1).toDouble()),
+                  child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(filled ? Icons.star : Icons.star_border,
+                        color: Colors.amber, size: 36)),
+                );
+              }),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: ctrl, maxLines: 3, maxLength: 300,
+              decoration: InputDecoration(
+                hintText: 'Share your experience (optional)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kGreen, foregroundColor: Colors.black),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == true) {
+      final res = await ApiService.instance.submitReview(
+        stationId: widget.stationId,
+        rating: rating,
+        comment: ctrl.text.trim(),
+      );
+      if (!mounted) return;
+      if (res['success']) {
+        _load();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Review submitted ✅'), backgroundColor: kGreen,
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(res['message'] as String? ?? 'Failed'),
+          backgroundColor: Colors.redAccent,
+        ));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Container(padding: const EdgeInsets.all(20), decoration: kCardDeco(),
+        child: const Center(child: CircularProgressIndicator(color: kGreen)));
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Text('Reviews', style: kTitle(15)),
+        const SizedBox(width: 8),
+        if (_count > 0) Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+              color: kGreen.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(10)),
+          child: Text('$_count', style: const TextStyle(
+              color: kGreen, fontSize: 11, fontWeight: FontWeight.w700)),
+        ),
+        const Spacer(),
+        TextButton.icon(
+          onPressed: _showAddReviewDialog,
+          icon: const Icon(Icons.rate_review_outlined, size: 16, color: kGreen),
+          label: const Text('Write', style: TextStyle(color: kGreen)),
+        ),
+      ]),
+      const SizedBox(height: 8),
+      if (_reviews.isEmpty)
+        Container(padding: const EdgeInsets.all(20), decoration: kCardDeco(),
+          child: Center(child: Column(children: [
+            Icon(Icons.star_border, color: cSub2, size: 36),
+            const SizedBox(height: 8),
+            Text('No reviews yet — be the first!', style: kSub(13)),
+          ])))
+      else ...[
+        Container(padding: const EdgeInsets.all(14), decoration: kCardDeco(),
+          child: Row(children: [
+            Text(_avg.toStringAsFixed(1), style: kTitle(28).copyWith(color: kGreen)),
+            const SizedBox(width: 12),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: List.generate(5, (i) => Icon(
+                i < _avg.round() ? Icons.star : Icons.star_border,
+                color: Colors.amber, size: 16,
+              ))),
+              const SizedBox(height: 2),
+              Text('Based on $_count review${_count == 1 ? '' : 's'}',
+                  style: kSub(11)),
+            ]),
+          ]),
+        ),
+        const SizedBox(height: 10),
+        ..._reviews.take(5).map((r) => _reviewCard(r as Map<String, dynamic>)),
+        if (_reviews.length > 5) Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text('+ ${_reviews.length - 5} more', style: kSub(11)),
+        ),
+      ],
+    ]);
+  }
+
+  Widget _reviewCard(Map<String, dynamic> r) {
+    final user    = r['user'] is Map ? r['user'] as Map<String, dynamic> : null;
+    final name    = user != null
+        ? '${user['firstName'] ?? ''} ${user['lastName'] ?? ''}'.trim()
+        : 'User';
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
+    final rating  = (r['rating'] as num?)?.toDouble() ?? 0;
+    final comment = r['comment'] as String? ?? '';
+    final when    = r['createdAt'] as String?;
+    final dt      = when != null ? DateTime.tryParse(when) : null;
+    final dateStr = dt != null
+        ? '${dt.day}/${dt.month}/${dt.year}'
+        : '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: kCardDeco(),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          CircleAvatar(
+            radius: 16, backgroundColor: kGreen.withOpacity(0.2),
+            child: Text(initial,
+                style: const TextStyle(
+                    color: kGreen, fontWeight: FontWeight.w700, fontSize: 13)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(name, style: kTitle(13))),
+          Row(children: List.generate(5, (i) => Icon(
+            i < rating.round() ? Icons.star : Icons.star_border,
+            color: Colors.amber, size: 14,
+          ))),
+        ]),
+        if (comment.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(comment, style: kSub(12)),
+        ],
+        if (dateStr.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(dateStr, style: TextStyle(color: cSub2, fontSize: 10)),
+        ],
+      ]),
+    );
+  }
 }

@@ -924,6 +924,124 @@ class ApiService {
     }
   }
 
+  // ── Notifications ─────────────────────────────────────────
+  Future<Map<String, dynamic>> getNotifications() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/notifications'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getUnreadNotificationCount() async {
+    try {
+      final res = await http.get(
+          Uri.parse('$baseUrl/notifications/unread-count'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> markNotificationRead(String id) async {
+    try {
+      final res = await http.put(
+          Uri.parse('$baseUrl/notifications/$id/read'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> markAllNotificationsRead() async {
+    try {
+      final res = await http.put(
+          Uri.parse('$baseUrl/notifications/read-all'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteNotification(String id) async {
+    try {
+      final res = await http.delete(
+          Uri.parse('$baseUrl/notifications/$id'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  // ── Reviews ───────────────────────────────────────────────
+  Future<Map<String, dynamic>> getStationReviews(String stationId) async {
+    try {
+      final res = await http.get(
+          Uri.parse('$baseUrl/reviews/station/$stationId'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getMyReviews() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/reviews/me'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> submitReview({
+    required String stationId,
+    required double rating,
+    String comment = '',
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/reviews/$stationId'),
+        headers: _headers,
+        body: jsonEncode({'rating': rating, 'comment': comment}),
+      );
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteReview(String reviewId) async {
+    try {
+      final res = await http.delete(
+          Uri.parse('$baseUrl/reviews/$reviewId'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  // ── Referrals ─────────────────────────────────────────────
+  Future<Map<String, dynamic>> getMyReferrals() async {
+    try {
+      final res = await http.get(
+          Uri.parse('$baseUrl/referrals/me'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> validateReferralCode(String code) async {
+    try {
+      final res = await http.get(
+          Uri.parse('$baseUrl/referrals/validate/$code'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
   // ── Charging Session ─────────────────────────────────────
   Future<Map<String, dynamic>> startCharging(String stationId) async {
     try {
