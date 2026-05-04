@@ -26,7 +26,10 @@ class ChargerDetailScreen extends StatelessWidget {
     final power       = station['power']     as String? ?? '22 kW';
     final conn        = station['connector'] as String? ?? 'CCS2';
     final price       = station['price']?.toString() ?? '2.5';
-    final ok          = station['available'] as bool? ?? true;
+    final occupancy   = (station['occupancy'] as String?) ??
+        ((station['available'] as bool? ?? true) ? 'free' : 'busy');
+    final ok          = occupancy == 'free';
+    final isOffline   = occupancy == 'offline';
     final addr        = (station['location'] as Map?)?['address'] as String? ?? '';
     final rating      = (station['rating'] as num?)?.toDouble() ?? 5.0;
     final networkName = station['network'] as String? ?? 'Independent';
@@ -37,7 +40,12 @@ class ChargerDetailScreen extends StatelessWidget {
     final network     = networkInfo(networkName);
     final connColor   = _connColor(conn);
     final isComingSoon = status == 'Coming Soon';
-    final statusColor  = isComingSoon ? Colors.grey : (ok ? kGreen : Colors.redAccent);
+    final statusColor  = isComingSoon
+        ? Colors.grey
+        : (isOffline ? Colors.grey : (ok ? kGreen : Colors.redAccent));
+    final statusLabel  = isComingSoon
+        ? 'Coming Soon'
+        : (isOffline ? 'Offline' : (ok ? 'Available' : 'In Use'));
 
     return Scaffold(
       backgroundColor: cBg,
@@ -69,7 +77,7 @@ class ChargerDetailScreen extends StatelessWidget {
                       color: statusColor.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(20)),
                   child: Text(
-                    isComingSoon ? 'Coming Soon' : (ok ? 'Available' : 'Busy'),
+                    statusLabel,
                     style: TextStyle(color: statusColor,
                         fontSize: 11, fontWeight: FontWeight.w700))),
               ])),
@@ -134,14 +142,14 @@ class ChargerDetailScreen extends StatelessWidget {
           Text('$name is a ${network.name} charging station '
               'with $power output and $conn connector. '
               'Price: $price NIS/kWh. '
-              '${isComingSoon ? "Opening soon." : (ok ? "Currently available." : "Currently busy.")}',
+              '${isComingSoon ? "Opening soon." : (isOffline ? "Currently offline." : (ok ? "Currently available." : "Currently in use."))}',
               style: kSub(13)),
           const SizedBox(height: 28),
 
           // ── Book button ───────────────────────────────────
           SizedBox(width: double.infinity, height: 54,
             child: ElevatedButton(
-              onPressed: (ok && !isComingSoon)
+              onPressed: (ok && !isComingSoon && !isOffline)
                   ? () => goTo(context, BookingFormScreen(station: station))
                   : null,
               style: ElevatedButton.styleFrom(
@@ -150,7 +158,7 @@ class ChargerDetailScreen extends StatelessWidget {
                 foregroundColor: Colors.black,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
               child: Text(
-                isComingSoon ? 'Coming Soon' : (ok ? 'Book Now' : 'Not Available'),
+                isComingSoon ? 'Coming Soon' : (isOffline ? 'Offline' : (ok ? 'Book Now' : 'In Use')),
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)))),
         ]),
       ),

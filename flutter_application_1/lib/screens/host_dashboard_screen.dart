@@ -225,34 +225,57 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
                           minimumSize: const Size(double.infinity, 52),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))));
                 }
-                final s  = _stations[i] as Map<String, dynamic>;
-                final ok = s['available'] as bool? ?? true;
+                final s   = _stations[i] as Map<String, dynamic>;
+                final occ = (s['occupancy'] as String?) ??
+                    ((s['available'] as bool? ?? true) ? 'free' : 'busy');
+                final color = occ == 'busy'
+                    ? Colors.redAccent
+                    : (occ == 'offline' ? Colors.grey : kGreen);
+                final label = occ == 'busy'
+                    ? 'In Use'
+                    : (occ == 'offline' ? 'Offline' : 'Available');
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16),
                   decoration: kCardDeco(),
                   child: Row(children: [
                     Container(width: 46, height: 46,
                       decoration: BoxDecoration(
-                          color: ok ? kGreen.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                          color: color.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12)),
-                      child: Icon(Icons.ev_station, color: ok ? kGreen : Colors.orange, size: 24)),
+                      child: Icon(Icons.ev_station, color: color, size: 24)),
                     const SizedBox(width: 14),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(s['name'] as String, style: kTitle(13)),
                       Text('${s['power']} · ${s['connector']} · ${s['price']} NIS/kWh', style: kSub(11)),
+                      const SizedBox(height: 4),
+                      Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(label,
+                          style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700))),
                     ])),
                     IconButton(
                       icon: Icon(Icons.edit_outlined, color: cSub2, size: 20),
                       onPressed: () => _showEditStation(s)),
-                    Switch(
-                      value: ok, activeColor: kGreen,
-                      onChanged: (_) async {
-                        final res = await ApiService.instance.toggleStation(s['_id'] as String);
+                    PopupMenuButton<String>(
+                      tooltip: 'Set status',
+                      icon: Icon(Icons.more_vert, color: cSub2, size: 20),
+                      onSelected: (value) async {
+                        final res = await ApiService.instance
+                            .setStationOccupancy(s['_id'] as String, value);
                         if (res['success'] && mounted) {
-                          _snack(ok ? 'Station disabled' : 'Station enabled ✅');
+                          _snack('Status: ${value[0].toUpperCase()}${value.substring(1)}');
                           _loadAll();
                         }
-                      }),
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: 'free',    child: Text('Mark Available')),
+                        PopupMenuItem(value: 'busy',    child: Text('Mark In Use')),
+                        PopupMenuItem(value: 'offline', child: Text('Take Offline')),
+                      ],
+                    ),
                   ]));
               }));
   }

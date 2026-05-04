@@ -445,6 +445,19 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> setStationOccupancy(String stationId, String occupancy) async {
+    try {
+      final res = await http.put(
+        Uri.parse('$baseUrl/host/stations/$stationId/occupancy'),
+        headers: _headers,
+        body: jsonEncode({'occupancy': occupancy}),
+      );
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
   Future<Map<String, dynamic>> getHostBookings() async {
     try {
       final res = await http.get(Uri.parse('$baseUrl/host/bookings'), headers: _headers);

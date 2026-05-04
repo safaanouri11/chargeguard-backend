@@ -543,7 +543,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ])));
 
   Widget _stationCard(BuildContext ctx, Map<String, dynamic> s) {
-    final ok = s['available'] as bool? ?? true;
+    final occ   = (s['occupancy'] as String?) ?? ((s['available'] as bool? ?? true) ? 'free' : 'busy');
+    final color = _occColor(occ);
+    final label = _occLabel(occ);
     final name  = s['name'] as String? ?? 'Station';
     final power = s['power'] as String? ?? '22 kW';
     final price = '${s['price']?.toString() ?? '2.5'} NIS';
@@ -553,9 +555,9 @@ class _HomeScreenState extends State<HomeScreen> {
         decoration: kCardDeco(),
         child: Row(children: [
           Container(width: 46, height: 46,
-              decoration: BoxDecoration(color: ok ? kGreen.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+              decoration: BoxDecoration(color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12)),
-              child: Icon(Icons.ev_station, color: ok ? kGreen : Colors.redAccent, size: 24)),
+              child: Icon(Icons.ev_station, color: color, size: 24)),
           const SizedBox(width: 14),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(name, style: kTitle(13)),
@@ -573,12 +575,31 @@ class _HomeScreenState extends State<HomeScreen> {
           ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(color: ok ? kGreen.withOpacity(0.15) : Colors.red.withOpacity(0.15),
+              decoration: BoxDecoration(color: color.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(20)),
-              child: Text(ok ? L.available : L.busy,
-                  style: TextStyle(color: ok ? kGreen : Colors.redAccent,
+              child: Text(label,
+                  style: TextStyle(color: color,
                       fontSize: 11, fontWeight: FontWeight.w700))),
           ]),
         ])));
+  }
+}
+
+// ── Occupancy helpers (free | busy | offline) ──────────────
+Color _occColor(String occupancy) {
+  switch (occupancy) {
+    case 'busy':    return Colors.redAccent;
+    case 'offline': return Colors.grey;
+    case 'free':
+    default:        return kGreen;
+  }
+}
+
+String _occLabel(String occupancy) {
+  switch (occupancy) {
+    case 'busy':    return 'In Use';
+    case 'offline': return 'Offline';
+    case 'free':
+    default:        return 'Available';
   }
 }
