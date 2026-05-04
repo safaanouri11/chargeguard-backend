@@ -71,9 +71,18 @@ class _TripPlannerScreenState extends State<TripPlannerScreen> {
   }
 
   Future<void> _planTrip() async {
-    final loc = _currentLocation;
-    final double? startLat = _useCurrentLocation ? loc?['lat'] : _from?.lat;
-    final double? startLng = _useCurrentLocation ? loc?['lng'] : _from?.lng;
+    double? startLat;
+    double? startLng;
+    if (_useCurrentLocation) {
+      final loc = _currentLocation;
+      if (loc != null) {
+        startLat = loc['lat'];
+        startLng = loc['lng'];
+      }
+    } else {
+      startLat = _from?.lat;
+      startLng = _from?.lng;
+    }
     if (startLat == null || startLng == null) {
       setState(() => _error = 'Pick a starting point');
       return;
