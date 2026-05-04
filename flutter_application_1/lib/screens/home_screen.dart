@@ -29,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _recentBookings = [];
   bool _loadingStations = true;
   bool _loadingBookings = true;
+  bool _usingLocation   = false; // true if list is sorted by distance
 
   Map<String, dynamic>? _aiRecommendation;
   bool _loadingAI = true;
@@ -65,11 +66,28 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadStations() async {
+    // Try location-based nearby first; fall back to all stations on denial/failure.
+    final pos = await ApiService.instance.getCurrentPosition();
+    if (pos != null) {
+      final nearby = await ApiService.instance.getNearbyStations(
+        lat: pos['lat']!, lng: pos['lng']!, radius: 25,
+      );
+      if (mounted && nearby['success']) {
+        final data = nearby['data'] as Map<String, dynamic>;
+        setState(() {
+          _loadingStations = false;
+          _usingLocation   = true;
+          _stations        = (data['results'] as List?) ?? [];
+        });
+        return;
+      }
+    }
     final result = await ApiService.instance.getStations();
     if (mounted) {
       setState(() {
         _loadingStations = false;
-        _stations = result['success'] ? (result['data'] as List) : [];
+        _usingLocation   = false;
+        _stations        = result['success'] ? (result['data'] as List) : [];
       });
     }
   }
@@ -529,6 +547,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final name  = s['name'] as String? ?? 'Station';
     final power = s['power'] as String? ?? '22 kW';
     final price = '${s['price']?.toString() ?? '2.5'} NIS';
+    final distanceKm = (s['distanceKm'] as num?)?.toDouble();
     return GestureDetector(onTap: () => goTo(ctx, ChargerDetailScreen(s)),
       child: Container(margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16),
         decoration: kCardDeco(),
@@ -545,6 +564,11 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(' $power', style: kSub(12)), const SizedBox(width: 8),
               Icon(Icons.attach_money, size: 12, color: cSub2),
               Text(price, style: kSub(12)),
+              if (distanceKm != null) ...[
+                const SizedBox(width: 8),
+                Icon(Icons.place_outlined, size: 12, color: cSub2),
+                Text(' ${distanceKm.toStringAsFixed(1)} km', style: kSub(12)),
+              ],
             ]),
           ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
