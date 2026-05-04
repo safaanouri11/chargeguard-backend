@@ -2,27 +2,65 @@ const express = require('express');
 const bcrypt  = require('bcryptjs');
 const jwt     = require('jsonwebtoken');
 const User    = require('../models/User');
+const Transaction = require('../models/Transaction');
+const notify  = require('../utils/notify');
+const { generateUniqueCode } = require('../utils/referralCode');
 const router = express.Router();
 const SECRET = process.env.JWT_SECRET || 'chargeguard_secret_2026';
+const REFERRER_BONUS = 10; // NIS to inviter when invitee registers
+const INVITEE_BONUS  = 5;  // NIS welcome bonus to new user
+async function applyReferral(newUser, code) {
+  if (!code) return;
+  var inviter = await User.findOne({ referralCode: code.toUpperCase() });
+  if (!inviter || inviter._id.equals(newUser._id)) return;
+  await User.findByIdAndUpdate(newUser._id, {
+    referredBy: inviter._id,
+    $inc: { balance: INVITEE_BONUS },
+  });
+  await User.findByIdAndUpdate(inviter._id, {
+    $inc: { balance: REFERRER_BONUS, referralCount: 1, referralEarnings: REFERRER_BONUS },
+  });
+  await Transaction.create({
+    user: newUser._id, label: 'Referral Welcome Bonus',
+    amount: INVITEE_BONUS, type: 'referral',
+  });
+  await Transaction.create({
+    user: inviter._id, label: 'Referral Reward (' + newUser.firstName + ')',
+    amount: REFERRER_BONUS, type: 'referral',
+  });
+  await notify(inviter._id,
+    'Referral Reward',
+    'You earned ' + REFERRER_BONUS + ' NIS — ' + newUser.firstName + ' joined using your code.',
+    'referral', '/referrals');
+  await notify(newUser._id,
+    'Welcome Bonus',
+    INVITEE_BONUS + ' NIS added to your wallet for joining via referral.',
+    'referral', '/wallet');
+}
 function makeToken(id) {
   return jwt.sign({ id }, SECRET);
 }
 // POST /api/auth/register (driver)
 router.post('/register', async function(req, res) {
   try {
-    var { firstName, lastName, email, password, role, region } = req.body;
+    var { firstName, lastName, email, password, role, region, referralCode } = req.body;
     var exists = await User.findOne({ email: email.toLowerCase() });
     if (exists) return res.status(400).json({ message: 'Email already in use' });
     var hashed = await bcrypt.hash(password, 10);
+    var newCode = await generateUniqueCode();
     var user = await User.create({
       firstName, lastName, email: email.toLowerCase(),
       password: hashed, role: role || 'driver', region: region || 'Palestine',
+      referralCode: newCode,
     });
-    console.log('New user registered: ' + user.email);
+    await applyReferral(user, referralCode);
+    var fresh = await User.findById(user._id);
+    console.log('New user registered: ' + fresh.email);
     res.status(201).json({
-      _id: user._id, firstName: user.firstName, lastName: user.lastName,
-      email: user.email, role: user.role, balance: user.balance,
-      points: user.points, batteryPct: user.batteryPct, token: makeToken(user._id),
+      _id: fresh._id, firstName: fresh.firstName, lastName: fresh.lastName,
+      email: fresh.email, role: fresh.role, balance: fresh.balance,
+      points: fresh.points, batteryPct: fresh.batteryPct,
+      referralCode: fresh.referralCode, token: makeToken(fresh._id),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -32,13 +70,14 @@ router.post('/register', async function(req, res) {
 router.post('/register-host', async function(req, res) {
   try {
     var { firstName, lastName, email, password, businessName, phone,
-          bankName, iban, idImage, licenseImage } = req.body;
+          bankName, iban, idImage, licenseImage, referralCode } = req.body;
     if (!idImage || !licenseImage) {
       return res.status(400).json({ message: 'ID and License images are required' });
     }
     var exists = await User.findOne({ email: email.toLowerCase() });
     if (exists) return res.status(400).json({ message: 'Email already in use' });
     var hashed = await bcrypt.hash(password, 10);
+    var newCode = await generateUniqueCode();
     var user = await User.create({
       firstName, lastName, email: email.toLowerCase(),
       password: hashed,
@@ -50,7 +89,9 @@ router.post('/register-host', async function(req, res) {
       iban: iban || '',
       idImage, licenseImage,
       hostStatus: 'Pending',
+      referralCode: newCode,
     });
+    await applyReferral(user, referralCode);
     console.log('New host application: ' + user.email + ' (PENDING REVIEW)');
     res.status(201).json({
       _id: user._id, firstName: user.firstName, lastName: user.lastName,
@@ -79,6 +120,7 @@ router.post('/login', async function(req, res) {
       batteryPct: user.batteryPct, businessName: user.businessName,
       bankName: user.bankName, iban: user.iban, bio: user.bio,
       hostStatus: user.hostStatus, rejectionReason: user.rejectionReason,
+      referralCode: user.referralCode,
       token: makeToken(user._id),
     });
   } catch (err) {

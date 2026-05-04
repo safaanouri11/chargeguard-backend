@@ -33,5 +33,10 @@ const userSchema = new mongoose.Schema({
   notifBookings: { type: Boolean, default: true },
   notifPayouts:  { type: Boolean, default: true },
   notifReviews:  { type: Boolean, default: true },
+  // Referral
+  referralCode:     { type: String, unique: true, sparse: true, index: true },
+  referredBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  referralCount:    { type: Number, default: 0 },
+  referralEarnings: { type: Number, default: 0 },
 }, { timestamps: true });
 module.exports = mongoose.model('User', userSchema);

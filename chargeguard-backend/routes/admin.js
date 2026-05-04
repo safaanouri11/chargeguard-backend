@@ -6,6 +6,7 @@ const Transaction = require('../models/Transaction');
 const Payout      = require('../models/Payout');
 const Ticket      = require('../models/Ticket');
 const protect     = require('../middleware/protect');
+const notify      = require('../utils/notify');
 const router = express.Router();
 function adminOnly(req, res, next) {
   if (req.user.role !== 'admin') {
@@ -93,6 +94,10 @@ router.put('/hosts/:id/approve', protect, adminOnly, async function(req, res) {
       hostStatus: 'Approved', approvedAt: new Date(), rejectionReason: '',
     }, { new: true }).select('-password');
     if (!host) return res.status(404).json({ message: 'Host not found' });
+    await notify(host._id,
+      'Host Application Approved',
+      'Welcome aboard! Your host account is now active. You can start adding stations.',
+      'host', '/host');
     res.json({ message: 'Host approved', host });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -105,6 +110,10 @@ router.put('/hosts/:id/reject', protect, adminOnly, async function(req, res) {
       rejectionReason: req.body.reason || 'Application did not meet requirements',
     }, { new: true }).select('-password');
     if (!host) return res.status(404).json({ message: 'Host not found' });
+    await notify(host._id,
+      'Host Application Rejected',
+      host.rejectionReason,
+      'host', '/host/status');
     res.json({ message: 'Host rejected', host });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -185,6 +194,10 @@ router.put('/payouts/:id/approve', protect, adminOnly, async function(req, res) 
     var payout = await Payout.findByIdAndUpdate(req.params.id,
       { status: 'Paid' }, { new: true });
     if (!payout) return res.status(404).json({ message: 'Not found' });
+    await notify(payout.host,
+      'Payout Approved',
+      payout.amount + ' NIS has been sent to your account (' + payout.bankName + ').',
+      'payout', '/host/payouts');
     res.json({ message: 'Payout approved', payout });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -195,6 +208,10 @@ router.put('/payouts/:id/reject', protect, adminOnly, async function(req, res) {
     var payout = await Payout.findByIdAndUpdate(req.params.id,
       { status: 'Rejected' }, { new: true });
     if (!payout) return res.status(404).json({ message: 'Not found' });
+    await notify(payout.host,
+      'Payout Rejected',
+      'Your payout request of ' + payout.amount + ' NIS was rejected. Please contact support.',
+      'payout', '/host/payouts');
     res.json({ message: 'Payout rejected', payout });
   } catch (err) {
     res.status(500).json({ message: err.message });
