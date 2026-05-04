@@ -251,6 +251,45 @@ class ApiService {
     }
   }
 
+  // Get nearby stations (sorted by distance)
+  Future<Map<String, dynamic>> getNearbyStations({
+    required double lat,
+    required double lng,
+    double radius = 10,
+    String? connector,
+    bool onlyAvailable = false,
+  }) async {
+    try {
+      final params = <String, String>{
+        'lat': lat.toString(),
+        'lng': lng.toString(),
+        'radius': radius.toString(),
+      };
+      if (connector != null && connector.isNotEmpty) params['connector'] = connector;
+      if (onlyAvailable) params['onlyAvailable'] = 'true';
+      final uri = Uri.parse('$baseUrl/stations/nearby').replace(queryParameters: params);
+      final res = await http.get(uri, headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  // Try to get user's current location via browser geolocation API.
+  // Returns null if unavailable or denied.
+  Future<Map<String, double>?> getCurrentPosition({Duration timeout = const Duration(seconds: 8)}) async {
+    try {
+      final pos = await html.window.navigator.geolocation
+          .getCurrentPosition(enableHighAccuracy: false, timeout: timeout);
+      final lat = pos.coords?.latitude;
+      final lng = pos.coords?.longitude;
+      if (lat == null || lng == null) return null;
+      return {'lat': lat.toDouble(), 'lng': lng.toDouble()};
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ════════════════════════════════════════
   //  BOOKINGS
   // ════════════════════════════════════════
