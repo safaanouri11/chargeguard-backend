@@ -132,3 +132,36 @@ class SimplePage extends StatelessWidget {
     );
   }
 }
+
+// ── EV Network Data ───────────────────────────────────────
+class EVNetwork {
+  final String name;
+  final Color  color;
+  final Color  textColor;
+  final String abbr;
+  final IconData icon;
+
+  const EVNetwork({
+    required this.name, required this.color,
+    this.textColor = Colors.white,
+    required this.abbr, this.icon = Icons.ev_station,
+  });
+}
+
+const Map<String, EVNetwork> kNetworks = {
+  'ChargePoint':        EVNetwork(name: 'ChargePoint',        color: Color(0xFF0D6EFD), abbr: 'CP'),
+  'Tesla':              EVNetwork(name: 'Tesla',               color: Color(0xFFE82127), abbr: 'TS'),
+  'EVgo':               EVNetwork(name: 'EVgo',                color: Color(0xFF00C389), abbr: 'EV'),
+  'Electrify America':  EVNetwork(name: 'Electrify America',   color: Color(0xFF6C2BD9), abbr: 'EA'),
+  'Blink':              EVNetwork(name: 'Blink',               color: Color(0xFF009FE3), abbr: 'BL'),
+  'Shell Recharge':     EVNetwork(name: 'Shell Recharge',      color: Color(0xFFFFCE00), textColor: Color(0xFF0D1B2A), abbr: 'SH'),
+  'BP Pulse':           EVNetwork(name: 'BP Pulse',            color: Color(0xFF00A650), abbr: 'BP'),
+  'IONITY':             EVNetwork(name: 'IONITY',              color: Color(0xFFE6002D), abbr: 'IO'),
+  'Volta':              EVNetwork(name: 'Volta',               color: Color(0xFF00D4A1), abbr: 'VL'),
+  'Greenlots':          EVNetwork(name: 'Greenlots',           color: Color(0xFF4CAF50), abbr: 'GL'),
+  'Independent':        EVNetwork(name: 'Independent',         color: Color(0xFF00E5A0), textColor: Color(0xFF0D1B2A), abbr: 'IN'),
+  'Other':              EVNetwork(name: 'Other',               color: Color(0xFF607D8B), abbr: 'OT'),
+};
+
+EVNetwork networkInfo(String? name) =>
+  kNetworks[name] ?? kNetworks['Independent']!;

@@ -1,12 +1,13 @@
-const router      = require('express').Router();
-const protect     = require('../middleware/auth');
+const express     = require('express');
 const Booking     = require('../models/Booking');
-const Transaction = require('../models/Transaction');
 const User        = require('../models/User');
-// ── GET /api/bookings ─────────────────────────────────────
-router.get('/', protect, async (req, res) => {
+const Transaction = require('../models/Transaction');
+const protect     = require('../middleware/protect');
+const router = express.Router();
+// GET /api/bookings
+router.get('/', protect, async function(req, res) {
   try {
-    const bookings = await Booking.find({ user: req.user._id })
+    var bookings = await Booking.find({ user: req.user._id })
       .populate('station', 'name location power price connector')
       .sort({ createdAt: -1 });
     res.json(bookings);
@@ -14,55 +15,34 @@ router.get('/', protect, async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
-// ── POST /api/bookings ────────────────────────────────────
-router.post('/', protect, async (req, res) => {
+// POST /api/bookings
+router.post('/', protect, async function(req, res) {
   try {
-    const { stationId, date, time, price } = req.body;
-    // Check balance
-    const user = await User.findById(req.user._id);
+    var user = await User.findById(req.user._id);
     if (user.balance < 5) {
       return res.status(400).json({ message: 'Insufficient balance. Please top up.' });
     }
-    const booking = await Booking.create({
-      user:    req.user._id,
-      station: stationId,
-      date, time, price: price || 5,
+    var booking = await Booking.create({
+      user: req.user._id, station: req.body.stationId,
+      date: req.body.date, time: req.body.time,
     });
-    // Deduct booking fee + add points
-    await User.findByIdAndUpdate(req.user._id, {
-      $inc: { balance: -5, points: 10 }
-    });
-    // Save transaction
-    await Transaction.create({
-      user:   req.user._id,
-      label:  'Booking Fee',
-      amount: -5,
-      type:   'booking',
-    });
+    await User.findByIdAndUpdate(req.user._id, { $inc: { balance: -5, points: 10 } });
+    await Transaction.create({ user: req.user._id, label: 'Booking Fee', amount: -5, type: 'booking' });
     res.status(201).json(booking);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
-// ── PUT /api/bookings/:id/cancel ──────────────────────────
-router.put('/:id/cancel', protect, async (req, res) => {
+// PUT /api/bookings/:id/cancel
+router.put('/:id/cancel', protect, async function(req, res) {
   try {
-    const booking = await Booking.findById(req.params.id);
-    if (!booking) return res.status(404).json({ message: 'Booking not found' });
-    if (booking.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorized' });
-    }
+    var booking = await Booking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ message: 'Not found' });
     booking.status = 'Cancelled';
     await booking.save();
-    // Refund
     await User.findByIdAndUpdate(req.user._id, { $inc: { balance: 5 } });
-    await Transaction.create({
-      user:   req.user._id,
-      label:  'Refund — Booking Cancelled',
-      amount: +5,
-      type:   'refund',
-    });
-    res.json({ message: 'Booking cancelled and refunded' });
+    await Transaction.create({ user: req.user._id, label: 'Refund', amount: 5, type: 'refund' });
+    res.json({ message: 'Cancelled and refunded' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

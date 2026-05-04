@@ -3,6 +3,7 @@ import 'package:video_player/video_player.dart';
 import '../utils/constants.dart';
 import '../utils/api_service.dart';
 import 'signup_screen.dart';
+import 'host_signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -37,6 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final result = await ApiService.instance.login(
         email:    email,
         password: password,
+        rememberMe: _rememberMe,
       );
 
       if (!mounted) return;
@@ -44,8 +46,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (result['success'] == true) {
         final role = UserSession.instance.role;
-        if (role == 'host') {
-          Navigator.pushReplacementNamed(context, '/host');
+        if (role == 'admin') {
+          Navigator.pushReplacementNamed(context, '/admin');
+        } else if (role == 'host') {
+          final status = UserSession.instance.hostStatus;
+          if (status == 'Approved') {
+            Navigator.pushReplacementNamed(context, '/host');
+          } else {
+            Navigator.pushReplacementNamed(context, '/host-pending');
+          }
         } else {
           Navigator.pushReplacementNamed(context, '/home');
         }
@@ -82,7 +91,21 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _loading = false);
 
       if (result['success'] == true) {
-        Navigator.pushReplacementNamed(context, '/host');
+        final user = result['data'] as Map<String, dynamic>;
+        final role = user['role'] as String? ?? 'driver';
+
+        if (role == 'admin') {
+          Navigator.pushReplacementNamed(context, '/admin');
+        } else if (role == 'host') {
+          final status = user['hostStatus'] as String? ?? 'Approved';
+          if (status == 'Approved') {
+            Navigator.pushReplacementNamed(context, '/host');
+          } else {
+            Navigator.pushReplacementNamed(context, '/host-pending');
+          }
+        } else {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
       } else {
         _snack(result['message'] ?? 'Invalid email or password');
       }
@@ -92,6 +115,14 @@ class _LoginScreenState extends State<LoginScreen> {
         _snack('Connection error: $e');
       }
     }
+  }
+
+  // ── Forgot Password ────────────────────────────────────
+  Future<void> _forgotPassword() async {
+    final emailCtrl = TextEditingController(text: _emailCtrl.text);
+
+    await showDialog(context: context, builder: (_) => _ForgotPasswordDialog(
+      initialEmail: emailCtrl.text));
   }
 
   void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
@@ -218,7 +249,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const Spacer(),
                 GestureDetector(
-                  onTap: () => _snack('Coming soon...'),
+                  onTap: _forgotPassword,
                   child: const Text('Forgot password?',
                       style: TextStyle(color: kGreen, fontSize: 13, fontWeight: FontWeight.w600))),
               ]),
@@ -261,6 +292,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: const Text('Sign Up',
                       style: TextStyle(color: kGreen, fontSize: 14, fontWeight: FontWeight.w700))),
               ])),
+              const SizedBox(height: 12),
+
+              // Become a Host link
+              Center(child: GestureDetector(
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const HostSignupScreen())),
+                child: const Text('Become a Host →',
+                    style: TextStyle(color: kGreen, fontSize: 13, fontWeight: FontWeight.w700)))),
               const SizedBox(height: 32),
             ]),
           ),
@@ -285,4 +324,200 @@ class _LoginScreenState extends State<LoginScreen> {
           borderSide: const BorderSide(color: kBorder)),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: kGreen, width: 1.5)));
+}
+
+// ─────────────────────────────────────────────────────────
+//  Forgot Password Dialog — 2 steps
+// ─────────────────────────────────────────────────────────
+class _ForgotPasswordDialog extends StatefulWidget {
+  final String initialEmail;
+  const _ForgotPasswordDialog({this.initialEmail = ''});
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  final _emailCtrl   = TextEditingController();
+  final _codeCtrl    = TextEditingController();
+  final _passCtrl    = TextEditingController();
+  final _confCtrl    = TextEditingController();
+
+  int  _step    = 0; // 0=email, 1=code+password
+  bool _loading = false;
+  bool _obscure = true;
+  String _resetCode = ''; // demo only
+
+  @override
+  void initState() {
+    super.initState();
+    _emailCtrl.text = widget.initialEmail;
+  }
+
+  @override
+  void dispose() {
+    _emailCtrl.dispose(); _codeCtrl.dispose();
+    _passCtrl.dispose(); _confCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendCode() async {
+    if (_emailCtrl.text.trim().isEmpty) return;
+    setState(() => _loading = true);
+    final result = await ApiService.instance.forgotPassword(_emailCtrl.text.trim());
+    setState(() => _loading = false);
+    if (result['success']) {
+      _resetCode = result['data']?['code'] as String? ?? '';
+      setState(() => _step = 1);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Code: $_resetCode (Demo — check terminal)'),
+        backgroundColor: const Color(0xFF131929),
+        duration: const Duration(seconds: 8),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(result['message'] ?? 'Error'),
+        backgroundColor: kRed, behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    if (_codeCtrl.text.trim().isEmpty || _passCtrl.text.isEmpty) return;
+    if (_passCtrl.text != _confCtrl.text) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Passwords do not match'), backgroundColor: kRed,
+        behavior: SnackBarBehavior.floating));
+      return;
+    }
+    if (_passCtrl.text.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Min 6 characters'), backgroundColor: kRed,
+        behavior: SnackBarBehavior.floating));
+      return;
+    }
+    setState(() => _loading = true);
+    final result = await ApiService.instance.resetPassword(
+      _emailCtrl.text.trim(), _codeCtrl.text.trim(), _passCtrl.text);
+    setState(() => _loading = false);
+    if (result['success']) {
+      if (mounted) Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Password reset! Please login ✅'),
+        backgroundColor: Color(0xFF131929),
+        behavior: SnackBarBehavior.floating));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(result['message'] ?? 'Error'),
+        backgroundColor: kRed, behavior: SnackBarBehavior.floating));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF131929),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(padding: const EdgeInsets.all(24), child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.lock_reset, color: kGreen, size: 24),
+            const SizedBox(width: 10),
+            Text('Reset Password', style: const TextStyle(color: Colors.white,
+                fontSize: 17, fontWeight: FontWeight.w800)),
+            const Spacer(),
+            GestureDetector(onTap: () => Navigator.pop(context),
+              child: const Icon(Icons.close, color: Colors.white38, size: 20)),
+          ]),
+          const SizedBox(height: 20),
+
+          if (_step == 0) ...[
+            const Text('Enter your email address and we\'ll send you a reset code.',
+                style: TextStyle(color: Colors.white54, fontSize: 13)),
+            const SizedBox(height: 16),
+            TextField(controller: _emailCtrl, keyboardType: TextInputType.emailAddress,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                labelText: 'Email Address', labelStyle: const TextStyle(color: Colors.white54),
+                prefixIcon: const Icon(Icons.email_outlined, color: Colors.white38, size: 20),
+                filled: true, fillColor: const Color(0xFF0A0E1A),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF1E2A3A))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF1E2A3A))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: kGreen, width: 1.5)))),
+            const SizedBox(height: 16),
+            SizedBox(width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _loading ? null : _sendCode,
+                style: ElevatedButton.styleFrom(backgroundColor: kGreen,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                child: _loading
+                    ? const SizedBox(width: 18, height: 18,
+                        child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                    : const Text('Send Reset Code',
+                        style: TextStyle(fontWeight: FontWeight.w800)))),
+          ],
+
+          if (_step == 1) ...[
+            Container(padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: kGreen.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: kGreen.withOpacity(0.3))),
+              child: Row(children: [
+                const Icon(Icons.info_outline, color: kGreen, size: 16),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Code sent to ${_emailCtrl.text}',
+                    style: const TextStyle(color: kGreen, fontSize: 12))),
+              ])),
+            const SizedBox(height: 14),
+            _dialogField(_codeCtrl, 'Reset Code', Icons.pin),
+            const SizedBox(height: 12),
+            _dialogField(_passCtrl, 'New Password', Icons.lock_outline, obscure: true),
+            const SizedBox(height: 12),
+            _dialogField(_confCtrl, 'Confirm Password', Icons.lock_outline, obscure: true),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(child: OutlinedButton(
+                onPressed: () => setState(() => _step = 0),
+                style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF1E2A3A)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                child: const Text('Back', style: TextStyle(color: Colors.white54)))),
+              const SizedBox(width: 10),
+              Expanded(child: ElevatedButton(
+                onPressed: _loading ? null : _resetPassword,
+                style: ElevatedButton.styleFrom(backgroundColor: kGreen,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                child: _loading
+                    ? const SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                    : const Text('Reset', style: TextStyle(fontWeight: FontWeight.w800)))),
+            ]),
+          ],
+        ])));
+  }
+
+  Widget _dialogField(TextEditingController ctrl, String label, IconData icon,
+      {bool obscure = false}) =>
+    StatefulBuilder(builder: (_, set) => TextField(
+      controller: ctrl, obscureText: obscure,
+      style: const TextStyle(color: Colors.white, fontSize: 14),
+      decoration: InputDecoration(
+        labelText: label, labelStyle: const TextStyle(color: Colors.white54),
+        prefixIcon: Icon(icon, color: Colors.white38, size: 20),
+        filled: true, fillColor: const Color(0xFF0A0E1A),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF1E2A3A))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF1E2A3A))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: kGreen, width: 1.5)))));
 }

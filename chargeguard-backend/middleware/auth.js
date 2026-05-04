@@ -1,6 +1,5 @@
 const jwt  = require('jsonwebtoken');
 const User = require('../models/User');
-const JWT_SECRET = process.env.JWT_SECRET || 'chargeguard_default_secret_2024';
 module.exports = async (req, res, next) => {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
@@ -8,7 +7,7 @@ module.exports = async (req, res, next) => {
   }
   try {
     const token   = auth.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user      = await User.findById(decoded.id).select('-password');
     next();
   } catch {

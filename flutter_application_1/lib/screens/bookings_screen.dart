@@ -22,6 +22,12 @@ class _BookingsScreenState extends State<BookingsScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_loading) _loadBookings();
+  }
+
+  @override
   void dispose() {
     AppSettings.instance.removeListener(_refresh);
     super.dispose();

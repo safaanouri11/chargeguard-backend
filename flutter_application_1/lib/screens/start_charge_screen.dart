@@ -1,421 +1,468 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
+import '../utils/api_service.dart';
+import 'payment_methods_screen.dart';
 
 class StartChargeScreen extends StatefulWidget {
-  const StartChargeScreen({super.key});
+  final Map<String, dynamic>? station;
+  const StartChargeScreen({super.key, this.station});
   @override
   State<StartChargeScreen> createState() => _StartChargeScreenState();
 }
 
 class _StartChargeScreenState extends State<StartChargeScreen>
-    with SingleTickerProviderStateMixin {
-  // 0 = QR tab, 1 = Station ID tab
-  int _tab = 0;
+    with TickerProviderStateMixin {
 
-  final _idCtrl = TextEditingController();
-  bool _scanning = false;
-  bool _connected = false;
+  bool   _isCharging = false;
+  bool   _isLoading  = false;
+  bool   _isDone     = false;
+  int    _seconds    = 0;
+  double _kwh        = 0.0;
+  double _cost       = 0.0;
+  int    _batteryPct = 0; // will be set from UserSession
+  double _newBalance = 0;
+  int    _pointsEarned = 0;
+
+  Map<String, dynamic>? _selectedStation;
+  Timer? _timer;
 
   late AnimationController _pulseCtrl;
-  late Animation<double> _pulse;
+  late Animation<double>   _pulseAnim;
 
   @override
   void initState() {
     super.initState();
-    _pulseCtrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 1))
+    _selectedStation = widget.station;
+    _batteryPct = UserSession.instance.batteryPct; // sync with home
+    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 1))
       ..repeat(reverse: true);
-    _pulse = Tween(begin: 0.85, end: 1.0)
-        .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+    _pulseAnim = Tween<double>(begin: 0.8, end: 1.0).animate(_pulseCtrl);
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
     _pulseCtrl.dispose();
-    _idCtrl.dispose();
     super.dispose();
   }
 
-  void _simulateScan() {
-    setState(() => _scanning = true);
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) setState(() { _scanning = false; _connected = true; });
+  Future<void> _startCharge() async {
+    if (_selectedStation == null) { _snack('Please select a station first'); return; }
+
+    // ── Check balance ─────────────────────────────────────
+    final balance = UserSession.instance.balance;
+    if (balance <= 0) {
+      showModalBottomSheet(
+        context: context, backgroundColor: cCard,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        builder: (_) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 60, height: 60,
+                decoration: BoxDecoration(color: kRed.withOpacity(0.1), shape: BoxShape.circle),
+                child: const Icon(Icons.account_balance_wallet_outlined, color: kRed, size: 30)),
+            const SizedBox(height: 16),
+            Text('Insufficient Balance', style: kTitle(18)),
+            const SizedBox(height: 8),
+            Text('Your wallet balance is NIS ${balance.toStringAsFixed(2)}.\nPlease top up to start charging.',
+                style: kSub(13), textAlign: TextAlign.center),
+            const SizedBox(height: 24),
+            SizedBox(width: double.infinity, height: 52,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const PaymentMethodsScreen()));
+                  if (mounted) setState(() {});
+                },
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Top Up Wallet', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                style: ElevatedButton.styleFrom(backgroundColor: kGreen, foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))))),
+            const SizedBox(height: 10),
+            SizedBox(width: double.infinity, height: 44,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancel', style: TextStyle(color: cSub, fontSize: 14)))),
+          ])));
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    final result = await ApiService.instance.startCharging(
+        _selectedStation!['_id'] as String);
+
+    setState(() => _isLoading = false);
+    if (!result['success']) { _snack(result['message'] ?? 'Failed'); return; }
+
+    final price = (_selectedStation!['price'] as num?)?.toDouble() ?? 2.5;
+    final stName = _selectedStation!['name'] as String? ?? 'Station';
+
+    setState(() { _isCharging = true; _seconds = 0; _kwh = 0; _cost = 0; });
+
+    // Update global session
+    UserSession.instance.startChargingSession(
+        _selectedStation!['_id'] as String, stName);
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() {
+        _seconds++;
+        _kwh  = _seconds * 0.006;
+        _cost = _kwh * price;
+        if (_batteryPct < 100 && _seconds % 10 == 0) _batteryPct++;
+      });
+      // Update global session every second
+      UserSession.instance.updateChargingSession(_seconds, _kwh, _cost);
     });
   }
 
-  void _connectById() {
-    if (_idCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Please enter a Station ID'),
-        backgroundColor: kCard,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
-      return;
-    }
-    setState(() => _connected = true);
+  Future<void> _stopCharge() async {
+    _timer?.cancel();
+    setState(() => _isLoading = true);
+
+    final result = await ApiService.instance.stopCharging(
+      stationId:  _selectedStation!['_id'] as String,
+      kwhCharged: _kwh,
+      duration:   _seconds,
+      batteryPct: _batteryPct,
+    );
+
+    setState(() => _isLoading = false);
+    if (!result['success']) { _snack(result['message'] ?? 'Error'); return; }
+
+    final data = result['data'] as Map<String, dynamic>;
+    setState(() {
+      _isCharging   = false;
+      _isDone       = true;
+      _newBalance   = (data['newBalance'] as num?)?.toDouble() ?? 0;
+      _pointsEarned = (data['pointsEarned'] as num?)?.toInt() ?? 0;
+    });
+    UserSession.instance.updateBalance(_newBalance);
+    UserSession.instance.stopChargingSession(_batteryPct);
+  }
+
+  void _pickStation() async {
+    final result = await Navigator.push<Map<String, dynamic>>(
+        context, MaterialPageRoute(builder: (_) => const _StationPickerScreen()));
+    if (result != null) setState(() => _selectedStation = result);
+  }
+
+  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    content: Text(msg), backgroundColor: cCard, behavior: SnackBarBehavior.floating,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+
+  String _fmt(int s) {
+    final m = s ~/ 60;
+    final sec = s % 60;
+    if (m > 0) return '${m}m ${sec}s';
+    return '${sec}s';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBg,
-      appBar: kAppBar('Start Charge', context),
-      body: _connected ? _connectedView() : _mainView(),
-    );
-  }
-
-  // ── Connected View ────────────────────────────────────────
-  Widget _connectedView() {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        // Success icon
-        Container(
-          width: 100, height: 100,
-          decoration: BoxDecoration(
-              color: kGreen.withOpacity(0.12), shape: BoxShape.circle,
-              border: Border.all(color: kGreen.withOpacity(0.5), width: 2)),
-          child: const Icon(Icons.check_circle_outline, color: kGreen, size: 52),
-        ),
-        const SizedBox(height: 20),
-        Text('Charger Connected!', style: kTitle(22), textAlign: TextAlign.center),
-        const SizedBox(height: 8),
-        Text('Station A · 50 kW · CCS2', style: kSub(14), textAlign: TextAlign.center),
-        const SizedBox(height: 32),
-
-        // Live charging stats
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-                colors: [kGreen.withOpacity(0.9), const Color(0xFF00B37A)],
-                begin: Alignment.topLeft, end: Alignment.bottomRight),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [BoxShadow(color: kGreen.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8))],
-          ),
-          child: Column(children: [
-            const Text('Charging in Progress',
-                style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 15)),
-            const SizedBox(height: 16),
-            const Text('65%',
-                style: TextStyle(color: Colors.black, fontSize: 52, fontWeight: FontWeight.w900, height: 1)),
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: 0.65,
-                backgroundColor: Colors.black.withOpacity(0.2),
-                valueColor: const AlwaysStoppedAnimation(Colors.black),
-                minHeight: 10,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(children: [
-              _liveStat('⚡', '22 kW',    'Power'),
-              Container(width: 1, height: 30, color: Colors.black.withOpacity(0.15)),
-              _liveStat('🔋', '14.3 kWh', 'Added'),
-              Container(width: 1, height: 30, color: Colors.black.withOpacity(0.15)),
-              _liveStat('⏱️', '23 min',   'Left'),
-            ]),
-          ]),
-        ),
-        const SizedBox(height: 28),
-
-        // Stop button
-        SizedBox(
-          width: double.infinity, height: 54,
-          child: OutlinedButton.icon(
-            onPressed: () => setState(() => _connected = false),
-            icon: const Icon(Icons.stop_circle_outlined, color: Colors.redAccent),
-            label: const Text('Stop Charging',
-                style: TextStyle(color: Colors.redAccent, fontSize: 15, fontWeight: FontWeight.w800)),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.redAccent, width: 1.5),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            ),
-          ),
-        ),
-      ]),
-    );
-  }
-
-  Widget _liveStat(String e, String v, String l) => Expanded(
-    child: Column(children: [
-      Text('$e $v',
-          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w800, fontSize: 13)),
-      Text(l, style: TextStyle(color: Colors.black.withOpacity(0.6), fontSize: 11)),
-    ]),
-  );
-
-  // ── Main View (tabs) ──────────────────────────────────────
-  Widget _mainView() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(children: [
-        // Tab switcher
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: kBorder)),
-          child: Row(children: [
-            _tabBtn(0, Icons.qr_code_scanner, 'Scan QR'),
-            _tabBtn(1, Icons.keyboard,         'Station ID'),
-          ]),
-        ),
-        const SizedBox(height: 32),
-
-        // Tab content
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: _tab == 0 ? _qrTab() : _idTab(),
-        ),
-      ]),
-    );
-  }
-
-  Widget _tabBtn(int idx, IconData icon, String label) {
-    final sel = _tab == idx;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _tab = idx),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: sel ? kGreen : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(icon, color: sel ? Colors.black : Colors.white54, size: 18),
-            const SizedBox(width: 6),
-            Text(label,
-                style: TextStyle(
-                    color: sel ? Colors.black : Colors.white54,
-                    fontSize: 13, fontWeight: FontWeight.w700)),
-          ]),
-        ),
+      backgroundColor: cBg,
+      appBar: kAppBar('Start Charging', context),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: _isDone ? _buildDone() : _buildMain(),
       ),
     );
   }
 
-  // ── QR Tab ────────────────────────────────────────────────
-  Widget _qrTab() {
-    return Column(key: const ValueKey(0), children: [
-      // QR frame
-      AnimatedBuilder(
-        animation: _pulse,
-        builder: (_, __) => Transform.scale(
-          scale: _scanning ? _pulse.value : 1.0,
-          child: Container(
-            width: 220, height: 220,
-            decoration: BoxDecoration(
-              color: kCard, borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                  color: _scanning ? kGreen : kBorder, width: _scanning ? 2.5 : 1.5),
-              boxShadow: _scanning
-                  ? [BoxShadow(color: kGreen.withOpacity(0.3), blurRadius: 20)]
-                  : [],
-            ),
-            child: Stack(alignment: Alignment.center, children: [
-              // Corner markers
-              ..._corners(),
-              // Center
-              if (_scanning)
-                Column(mainAxisSize: MainAxisSize.min, children: [
-                  const CircularProgressIndicator(color: kGreen, strokeWidth: 2.5),
-                  const SizedBox(height: 14),
-                  Text('Scanning...', style: kSub(13)),
-                ])
-              else
-                Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.qr_code_2, color: kGreen.withOpacity(0.6), size: 72),
-                  const SizedBox(height: 8),
-                  Text('Point camera at QR code', style: kSub(12), textAlign: TextAlign.center),
-                ]),
-            ]),
-          ),
-        ),
-      ),
-      const SizedBox(height: 32),
-
-      // Scan button
-      SizedBox(
-        width: double.infinity, height: 54,
-        child: ElevatedButton.icon(
-          onPressed: _scanning ? null : _simulateScan,
-          icon: const Icon(Icons.qr_code_scanner),
-          label: Text(_scanning ? 'Scanning...' : 'Scan QR Code',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: kGreen, foregroundColor: Colors.black,
-            disabledBackgroundColor: kGreen.withOpacity(0.4),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          ),
-        ),
-      ),
-      const SizedBox(height: 16),
-      Text('Or enter the station ID manually below',
-          style: kSub(12), textAlign: TextAlign.center),
-      const SizedBox(height: 12),
-      GestureDetector(
-        onTap: () => setState(() => _tab = 1),
-        child: const Text('Switch to Station ID →',
-            style: TextStyle(color: kGreen, fontSize: 13, fontWeight: FontWeight.w600)),
-      ),
-    ]);
-  }
-
-  List<Widget> _corners() {
-    const s = 24.0;
-    const t = 3.0;
-    const r = 6.0;
-    const c = kGreen;
-    return [
-      // Top-left
-      Positioned(top: 16, left: 16, child: _corner(s, t, r, c, top: true,  left: true)),
-      // Top-right
-      Positioned(top: 16, right: 16, child: _corner(s, t, r, c, top: true,  left: false)),
-      // Bottom-left
-      Positioned(bottom: 16, left: 16, child: _corner(s, t, r, c, top: false, left: true)),
-      // Bottom-right
-      Positioned(bottom: 16, right: 16, child: _corner(s, t, r, c, top: false, left: false)),
-    ];
-  }
-
-  Widget _corner(double s, double t, double r, Color c,
-      {required bool top, required bool left}) {
-    return SizedBox(
-      width: s, height: s,
-      child: CustomPaint(
-        painter: _CornerPainter(color: c, thickness: t, radius: r, top: top, left: left),
-      ),
-    );
-  }
-
-  // ── Station ID Tab ────────────────────────────────────────
-  Widget _idTab() {
-    return Column(key: const ValueKey(1), children: [
-      // Icon
-      Container(
-        width: 80, height: 80,
-        decoration: BoxDecoration(color: kGreen.withOpacity(0.1), shape: BoxShape.circle,
-            border: Border.all(color: kGreen.withOpacity(0.3), width: 1.5)),
-        child: const Icon(Icons.ev_station, color: kGreen, size: 40),
-      ),
+  // ── Done ──────────────────────────────────────────────────
+  Widget _buildDone() {
+    return Column(children: [
       const SizedBox(height: 20),
-      Text('Enter Station ID', style: kTitle(20)),
+      Container(
+        width: 120, height: 120,
+        decoration: BoxDecoration(color: kGreen.withOpacity(0.1), shape: BoxShape.circle,
+            border: Border.all(color: kGreen, width: 3)),
+        child: const Icon(Icons.check_circle, color: kGreen, size: 60)),
+      const SizedBox(height: 20),
+      Text('Charging Complete!', style: kTitle(22)),
       const SizedBox(height: 8),
-      Text('Find the ID on the charger label or in the app map',
-          style: kSub(13), textAlign: TextAlign.center),
-      const SizedBox(height: 28),
-
-      // Input field
-      TextField(
-        controller: _idCtrl,
-        keyboardType: TextInputType.text,
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700, letterSpacing: 4),
-        maxLength: 8,
-        decoration: InputDecoration(
-          hintText: 'e.g.  CG-1024',
-          hintStyle: const TextStyle(color: Colors.white24, fontSize: 16, letterSpacing: 2),
-          counterText: '',
-          filled: true, fillColor: kCard,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: kBorder)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: kBorder)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: kGreen, width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(vertical: 20),
-        ),
-      ),
-      const SizedBox(height: 12),
-
-      // Quick IDs
-      Text('Quick connect:', style: kSub(12)),
-      const SizedBox(height: 8),
-      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        _quickId('CG-1024'),
-        const SizedBox(width: 10),
-        _quickId('CG-2048'),
-        const SizedBox(width: 10),
-        _quickId('CG-3001'),
-      ]),
-      const SizedBox(height: 28),
-
-      // Connect button
+      Text('Session saved to your history', style: kSub(14)),
+      const SizedBox(height: 30),
+      Container(
+        padding: const EdgeInsets.all(20),
+        decoration: kCardDeco(),
+        child: Column(children: [
+          _row('Station',    _selectedStation?['name'] ?? 'Unknown'),
+          _row('Duration',   _fmt(_seconds)),
+          _row('kWh Charged','${_kwh.toStringAsFixed(3)} kWh'),
+          _row('Total Cost', '${_cost.toStringAsFixed(2)} NIS'),
+          Divider(color: cBorder, height: 24),
+          _row('New Balance','NIS ${_newBalance.toStringAsFixed(2)}', color: kGreen),
+          _row('Points',     '+$_pointsEarned pts', color: kGreen),
+        ])),
+      const SizedBox(height: 24),
       SizedBox(
-        width: double.infinity, height: 54,
-        child: ElevatedButton.icon(
-          onPressed: _connectById,
-          icon: const Icon(Icons.power),
-          label: const Text('Connect & Start',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: kGreen, foregroundColor: Colors.black,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          ),
-        ),
-      ),
+        width: double.infinity, height: 52,
+        child: ElevatedButton(
+          onPressed: () => Navigator.pop(context),
+          style: ElevatedButton.styleFrom(backgroundColor: kGreen, foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+          child: const Text('Back to Home', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)))),
     ]);
   }
 
-  Widget _quickId(String id) => GestureDetector(
-    onTap: () => setState(() => _idCtrl.text = id),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(color: kGreen.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10), border: Border.all(color: kGreen.withOpacity(0.3))),
-      child: Text(id, style: const TextStyle(color: kGreen, fontSize: 12, fontWeight: FontWeight.w700)),
-    ),
-  );
+  // ── Main ──────────────────────────────────────────────────
+  Widget _buildMain() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+      // Station selection
+      if (!_isCharging) ...[
+        Text('Station', style: kTitle(16)),
+        const SizedBox(height: 12),
+        _selectedStation != null ? _buildStationCard() : _buildPickStation(),
+        const SizedBox(height: 24),
+      ],
+
+      // Charging animation
+      if (_isCharging) ...[
+        Center(child: _buildPulse()),
+        const SizedBox(height: 24),
+        Row(children: [
+          _liveCard('⏱️', _fmt(_seconds), 'Duration'),
+          const SizedBox(width: 12),
+          _liveCard('⚡', _kwh.toStringAsFixed(3), 'kWh'),
+          const SizedBox(width: 12),
+          _liveCard('💰', _cost.toStringAsFixed(2), 'NIS'),
+        ]),
+        const SizedBox(height: 20),
+        Text('Battery Level', style: kSub(13)),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: _batteryPct / 100,
+            backgroundColor: cBorder,
+            valueColor: const AlwaysStoppedAnimation(kGreen),
+            minHeight: 14)),
+        const SizedBox(height: 4),
+        Text('$_batteryPct%',
+            style: const TextStyle(color: kGreen, fontWeight: FontWeight.w700, fontSize: 13)),
+        const SizedBox(height: 24),
+      ],
+
+      // Info
+      if (!_isCharging && _selectedStation != null) ...[
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: kCardDeco(),
+          child: Column(children: [
+            _row('Power',     _selectedStation!['power'] ?? '22 kW'),
+            _row('Connector', _selectedStation!['connector'] ?? 'CCS2'),
+            _row('Price',     '${_selectedStation!['price']} NIS/kWh'),
+            _row('Balance',   'NIS ${UserSession.instance.balance.toStringAsFixed(2)}'),
+          ])),
+        const SizedBox(height: 24),
+      ],
+
+      // Button
+      SizedBox(
+        width: double.infinity, height: 56,
+        child: ElevatedButton(
+          onPressed: _isLoading ? null : (_isCharging ? _stopCharge : _startCharge),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _isCharging ? Colors.redAccent : kGreen,
+            disabledBackgroundColor: kGreen.withOpacity(0.3),
+            foregroundColor: _isCharging ? Colors.white : Colors.black,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+          child: _isLoading
+              ? const SizedBox(width: 24, height: 24,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+              : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(_isCharging ? Icons.stop : Icons.bolt, size: 22),
+                  const SizedBox(width: 8),
+                  Text(_isCharging ? 'Stop Charging' : 'Start Charging',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                ])),
+      ),
+
+      // Low balance warning
+      if (!_isCharging && UserSession.instance.balance <= 0) ...[
+        const SizedBox(height: 10),
+        Container(padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: kRed.withOpacity(0.08), borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: kRed.withOpacity(0.25))),
+          child: Row(children: [
+            Icon(Icons.warning_amber_outlined, color: kRed, size: 16),
+            const SizedBox(width: 8),
+            Expanded(child: Text('No balance — top up your wallet first',
+                style: TextStyle(color: kRed, fontSize: 12))),
+          ])),
+      ],
+    ]);
+  }
+
+  Widget _buildPulse() {
+    return AnimatedBuilder(
+      animation: _pulseAnim,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _pulseAnim.value,
+          child: Container(
+            width: 180, height: 180,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: kGreen.withOpacity(0.1),
+              border: Border.all(color: kGreen, width: 3),
+              boxShadow: [BoxShadow(color: kGreen.withOpacity(0.3), blurRadius: 30)]),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Icon(Icons.bolt, color: kGreen, size: 48),
+              Text('$_batteryPct%',
+                  style: const TextStyle(color: kGreen, fontSize: 32, fontWeight: FontWeight.w900)),
+              Text('Charging', style: kSub(12)),
+            ])));
+      });
+  }
+
+  Widget _buildStationCard() {
+    final s = _selectedStation!;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: kCardDeco(),
+      child: Row(children: [
+        Container(width: 44, height: 44,
+            decoration: BoxDecoration(color: kGreen.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.ev_station, color: kGreen, size: 24)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(s['name'] as String, style: kTitle(14)),
+          Text('${s['power']} · ${s['connector']}', style: kSub(12)),
+        ])),
+        if (!_isCharging)
+          GestureDetector(
+            onTap: _pickStation,
+            child: const Text('Change',
+                style: TextStyle(color: kGreen, fontSize: 12, fontWeight: FontWeight.w700))),
+      ]));
+  }
+
+  Widget _buildPickStation() {
+    return GestureDetector(
+      onTap: _pickStation,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: kCardDeco(),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.add_circle_outline, color: kGreen, size: 24),
+          const SizedBox(width: 10),
+          Text('Choose a Station', style: TextStyle(color: kGreen, fontWeight: FontWeight.w700)),
+        ])));
+  }
+
+  Widget _liveCard(String emoji, String val, String label) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: kGreen.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: kGreen.withOpacity(0.25))),
+        child: Column(children: [
+          Text(emoji, style: const TextStyle(fontSize: 20)),
+          const SizedBox(height: 4),
+          Text(val, style: const TextStyle(color: kGreen, fontSize: 15, fontWeight: FontWeight.w800)),
+          Text(label, style: kSub(10)),
+        ])));
+  }
+
+  Widget _row(String label, String val, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(children: [
+        Text(label, style: kSub(13)),
+        const Spacer(),
+        Text(val, style: TextStyle(color: color ?? cTitle, fontSize: 13, fontWeight: FontWeight.w700)),
+      ]));
+  }
 }
 
-// ── Corner Painter ────────────────────────────────────────
-class _CornerPainter extends CustomPainter {
-  final Color color;
-  final double thickness, radius;
-  final bool top, left;
+// ════════════════════════════════════════
+//  Station Picker
+// ════════════════════════════════════════
+class _StationPickerScreen extends StatefulWidget {
+  const _StationPickerScreen();
+  @override
+  State<_StationPickerScreen> createState() => _StationPickerScreenState();
+}
 
-  const _CornerPainter(
-      {required this.color, required this.thickness, required this.radius,
-       required this.top, required this.left});
+class _StationPickerScreenState extends State<_StationPickerScreen> {
+  List<dynamic> _stations = [];
+  bool _loading = true;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = thickness
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+  void initState() {
+    super.initState();
+    _load();
+  }
 
-    final path = Path();
-    if (top && left) {
-      path.moveTo(0, size.height);
-      path.lineTo(0, radius);
-      path.arcToPoint(Offset(radius, 0), radius: Radius.circular(radius));
-      path.lineTo(size.width, 0);
-    } else if (top && !left) {
-      path.moveTo(0, 0);
-      path.lineTo(size.width - radius, 0);
-      path.arcToPoint(Offset(size.width, radius), radius: Radius.circular(radius));
-      path.lineTo(size.width, size.height);
-    } else if (!top && left) {
-      path.moveTo(0, 0);
-      path.lineTo(0, size.height - radius);
-      path.arcToPoint(Offset(radius, size.height), radius: Radius.circular(radius));
-      path.lineTo(size.width, size.height);
-    } else {
-      path.moveTo(0, size.height);
-      path.lineTo(size.width - radius, size.height);
-      path.arcToPoint(Offset(size.width, size.height - radius), radius: Radius.circular(radius));
-      path.lineTo(size.width, 0);
+  Future<void> _load() async {
+    final result = await ApiService.instance.getStations();
+    if (mounted) {
+      setState(() {
+        _loading  = false;
+        _stations = result['success'] ? (result['data'] as List) : [];
+      });
     }
-    canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(_CornerPainter old) => false;
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: cBg,
+      appBar: kAppBar('Choose Station', context),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: kGreen))
+          : ListView.builder(
+              padding: const EdgeInsets.all(20),
+              itemCount: _stations.length,
+              itemBuilder: _buildItem),
+    );
+  }
+
+  Widget _buildItem(BuildContext context, int i) {
+    final s  = _stations[i] as Map<String, dynamic>;
+    final ok = s['available'] as bool? ?? true;
+
+    return GestureDetector(
+      onTap: ok ? () => Navigator.pop(context, s) : null,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: kCardDeco(),
+        child: Row(children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: ok ? kGreen.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.ev_station, color: ok ? kGreen : Colors.grey, size: 24)),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(s['name'] as String,
+                  style: TextStyle(
+                      color: ok ? cTitle : cSub2,
+                      fontSize: 14, fontWeight: FontWeight.w700)),
+              Text('${s['power']} · ${s['price']} NIS/kWh', style: kSub(12)),
+            ])),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: ok ? kGreen.withOpacity(0.12) : Colors.grey.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20)),
+            child: Text(
+              ok ? 'Available' : 'Busy',
+              style: TextStyle(
+                  color: ok ? kGreen : Colors.grey,
+                  fontSize: 11, fontWeight: FontWeight.w700))),
+        ])));
+  }
 }

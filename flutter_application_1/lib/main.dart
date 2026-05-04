@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 import 'utils/constants.dart';
 import 'utils/app_settings.dart';
+import 'utils/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/map_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/bookings_screen.dart';
+import 'screens/bookmarks_screen.dart';
 import 'screens/host_dashboard_screen.dart';
+import 'screens/host_pending_screen.dart';
+import 'screens/admin_dashboard_screen.dart';
 
 void main() => runApp(const ChargeGuardApp());
 
 // ═══════════════════════════════════════
-//  APP — listens to AppSettings
+//  APP
 // ═══════════════════════════════════════
 class ChargeGuardApp extends StatefulWidget {
   const ChargeGuardApp({super.key});
@@ -37,7 +41,6 @@ class _ChargeGuardAppState extends State<ChargeGuardApp> {
 
   void _refresh() => setState(() {});
 
-  // ── Dark Theme ────────────────────────
   ThemeData get _dark => ThemeData.dark().copyWith(
     scaffoldBackgroundColor: kBg,
     colorScheme: const ColorScheme.dark(primary: kGreen, surface: kCard),
@@ -51,7 +54,6 @@ class _ChargeGuardAppState extends State<ChargeGuardApp> {
     ),
   );
 
-  // ── Light Theme ───────────────────────
   ThemeData get _light => ThemeData.light().copyWith(
     scaffoldBackgroundColor: const Color(0xFFF5F7FA),
     colorScheme: const ColorScheme.light(primary: kGreen, surface: Colors.white),
@@ -73,25 +75,26 @@ class _ChargeGuardAppState extends State<ChargeGuardApp> {
       theme:     _light,
       darkTheme: _dark,
       themeMode: _s.themeMode,
-      // اتجاه النص حسب اللغة
       builder: (context, child) => Directionality(
         textDirection: _s.isArabic ? TextDirection.rtl : TextDirection.ltr,
         child: child!,
       ),
       initialRoute: '/splash',
       routes: {
-        '/splash':   (context) => const SplashScreen(),
-        '/login':    (context) => const LoginScreen(),
-        '/register': (context) => const SignupScreen(),
-        '/home':     (context) => const MainShell(),
-        '/host':     (context) => const HostDashboardScreen(),
+        '/splash':        (context) => const SplashScreen(),
+        '/login':         (context) => const LoginScreen(),
+        '/register':      (context) => const SignupScreen(),
+        '/home':          (context) => const MainShell(),
+        '/host':          (context) => const HostDashboardScreen(),
+        '/host-pending':  (context) => const HostPendingScreen(),
+        '/admin':         (context) => const AdminDashboardScreen(),
       },
     );
   }
 }
 
 // ═══════════════════════════════════════
-//  SPLASH SCREEN
+//  SPLASH — Auto Login من localStorage
 // ═══════════════════════════════════════
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -111,9 +114,37 @@ class _SplashScreenState extends State<SplashScreen>
         vsync: this, duration: const Duration(milliseconds: 900));
     _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeIn);
     _ctrl.forward();
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) Navigator.pushReplacementNamed(context, '/login');
-    });
+    _checkLogin();
+  }
+
+  Future<void> _checkLogin() async {
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+
+    // حاول Auto Login من localStorage
+    final ok = await ApiService.instance.tryAutoLogin();
+    if (!mounted) return;
+
+    if (ok) {
+      final user = UserSession.instance;
+      final role = user.role;
+
+      if (role == 'admin') {
+        Navigator.pushReplacementNamed(context, '/admin');
+      } else if (role == 'host') {
+        // Check host status
+        final status = user.user?['hostStatus'] as String? ?? 'Approved';
+        if (status == 'Approved') {
+          Navigator.pushReplacementNamed(context, '/host');
+        } else {
+          Navigator.pushReplacementNamed(context, '/host-pending');
+        }
+      } else {
+        Navigator.pushReplacementNamed(context, '/home');
+      }
+    } else {
+      Navigator.pushReplacementNamed(context, '/login');
+    }
   }
 
   @override
@@ -138,6 +169,9 @@ class _SplashScreenState extends State<SplashScreen>
           Text('ChargeGuard', style: kTitle(30)),
           const SizedBox(height: 8),
           Text('Find. Book. Charge.', style: kSub(15)),
+          const SizedBox(height: 24),
+          const SizedBox(width: 20, height: 20,
+              child: CircularProgressIndicator(color: kGreen, strokeWidth: 2)),
         ]),
       ),
     ),
@@ -160,6 +194,7 @@ class _MainShellState extends State<MainShell> {
     HomeScreen(),
     MapScreen(),
     BookingsScreen(),
+    BookmarksScreen(),
     ProfileScreen(),
   ];
 
@@ -167,6 +202,7 @@ class _MainShellState extends State<MainShell> {
     {'icon': Icons.home_outlined,          'active': Icons.home,           'label': 'Home'},
     {'icon': Icons.map_outlined,            'active': Icons.map,            'label': 'Map'},
     {'icon': Icons.calendar_today_outlined, 'active': Icons.calendar_today, 'label': 'Bookings'},
+    {'icon': Icons.bookmark_outline,        'active': Icons.bookmark,       'label': 'Saved'},
     {'icon': Icons.person_outline,          'active': Icons.person,         'label': 'Profile'},
   ];
 

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 import '../utils/app_settings.dart';
+import '../utils/api_service.dart';
 import 'notifications_screen.dart';
 import 'charger_detail_screen.dart';
 import 'all_stations_screen.dart';
+import 'map_screen.dart';
 import 'bookings_screen.dart';
 import 'history_screen.dart';
 import 'start_charge_screen.dart';
@@ -19,39 +21,98 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool _isCharging    = true;
-  int  _chargePercent = 65;
-  int  _minutesLeft   = 23;
+  bool get _isCharging    => UserSession.instance.isCharging;
+  int  get _chargePercent => UserSession.instance.batteryPct;
+  int  get _minutesLeft   => 23;
+
+  List<dynamic> _stations      = [];
+  List<dynamic> _recentBookings = [];
+  bool _loadingStations = true;
+  bool _loadingBookings = true;
+
+  Map<String, dynamic>? _aiRecommendation;
+  bool _loadingAI = true;
+
+  int    _statSessions = 0;
+  double _statKwh      = 0;
+  bool   _loadingStats = true;
 
   @override
   void initState() {
     super.initState();
     AppSettings.instance.addListener(_refresh);
+    UserSession.instance.addListener(_refresh);
+    _loadStations();
+    _loadAI();
+    _loadBookings();
+    _loadStats();
   }
 
   @override
   void dispose() {
     AppSettings.instance.removeListener(_refresh);
+    UserSession.instance.removeListener(_refresh);
     super.dispose();
   }
 
   void _refresh() => setState(() {});
 
-  static const _stations = [
-    {'name': 'An-Najah EV Station', 'dist': '1.2 km', 'ok': true,  'price': '2.5 NIS', 'kw': '50 kW'},
-    {'name': 'City Mall Charger',   'dist': '2.5 km', 'ok': false, 'price': '1.8 NIS', 'kw': '22 kW'},
-    {'name': 'Campus Green Charger','dist': '3.1 km', 'ok': true,  'price': '1.5 NIS', 'kw': 'AC'},
-  ];
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload bookings when returning from other screens
+    if (!_loadingBookings) _loadBookings();
+  }
+
+  Future<void> _loadStations() async {
+    final result = await ApiService.instance.getStations();
+    if (mounted) {
+      setState(() {
+        _loadingStations = false;
+        _stations = result['success'] ? (result['data'] as List) : [];
+      });
+    }
+  }
+
+  Future<void> _loadBookings() async {
+    final result = await ApiService.instance.getBookings();
+    if (mounted) {
+      setState(() {
+        _loadingBookings  = false;
+        _recentBookings   = result['success'] ? (result['data'] as List).take(2).toList() : [];
+      });
+    }
+  }
+
+  Future<void> _loadStats() async {
+    final result = await ApiService.instance.getStats();
+    if (mounted) {
+      setState(() {
+        _loadingStats = false;
+        if (result['success']) {
+          _statSessions = (result['data']['sessions'] as num?)?.toInt() ?? 0;
+          _statKwh      = (result['data']['totalKwh'] as num?)?.toDouble() ?? 0;
+        }
+      });
+    }
+  }
+
+  Future<void> _loadAI() async {
+    final result = await ApiService.instance.getRecommendation();
+    if (mounted) {
+      setState(() {
+        _loadingAI = false;
+        _aiRecommendation = result['success']
+            ? result['data']['recommendation'] as Map<String, dynamic>?
+            : null;
+      });
+    }
+  }
 
   static const _promos = [
     {'title': 'First Charge Free! ⚡', 'sub': 'New users get 1 free session',  'color': 0xFF00E5A0},
     {'title': '20% Off This Weekend',  'sub': 'Use code: CHARGE20',             'color': 0xFF6C63FF},
     {'title': 'Refer & Earn 🎁',       'sub': 'Invite friends, get free kWh',   'color': 0xFFFF6B6B},
-  ];
-
-  static const _recentBookings = [
-    {'station': 'An-Najah EV Station', 'date': 'Today, 3:00 PM',      'status': 'Upcoming',  'color': 0xFF00E5A0},
-    {'station': 'Campus Green Charger','date': 'Yesterday, 11:00 AM', 'status': 'Completed', 'color': 0xFF6C9EFF},
   ];
 
   @override
@@ -70,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(L.quickActions, style: kTitle(16)),
             const SizedBox(height: 14),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              _actionBtn(context, Icons.map_outlined,            L.findCharger,  true,  AllStationsScreen()),
+              _actionBtn(context, Icons.map_outlined,            L.findCharger,  true,  const MapScreen()),
               _actionBtn(context, Icons.calendar_today_outlined, L.myBookings,   false, BookingsScreen()),
               _actionBtn(context, Icons.bolt_outlined,           L.startCharge,  false, StartChargeScreen()),
               _actionBtn(context, Icons.history_outlined,        L.history,      false, HistoryScreen()),
@@ -87,7 +148,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ]),
             const SizedBox(height: 14),
-            ..._stations.map((s) => _stationCard(context, s)),
+            if (_loadingStations)
+              const Center(child: Padding(
+                padding: EdgeInsets.all(20),
+                child: CircularProgressIndicator(color: kGreen, strokeWidth: 2)))
+            else if (_stations.isEmpty)
+              Container(padding: const EdgeInsets.all(20), decoration: kCardDeco(),
+                child: Center(child: Text('No stations found', style: kSub(13))))
+            else
+              ..._stations.take(3).map((s) => _stationCard(context, s as Map<String, dynamic>)),
             const SizedBox(height: 20),
             _recentSection(context),
             const SizedBox(height: 24),
@@ -102,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
     mainAxisAlignment: MainAxisAlignment.spaceBetween,
     children: [
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(L.welcome, style: kTitle(22)),
+        Text('${L.welcome}, ${UserSession.instance.firstName.isNotEmpty ? UserSession.instance.firstName : 'User'}! 👋', style: kTitle(20)),
         const SizedBox(height: 4),
         Text('ChargeGuard ${L.dashboard}', style: kSub(13)),
       ]),
@@ -124,65 +193,68 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   // ── Active Session ────────────────────────────────────────
-  Widget _activeSession() => Container(
-    padding: const EdgeInsets.all(18),
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-          colors: [kGreen.withOpacity(0.9), const Color(0xFF00B37A)],
-          begin: Alignment.topLeft, end: Alignment.bottomRight),
-      borderRadius: BorderRadius.circular(20),
-      boxShadow: [BoxShadow(color: kGreen.withOpacity(0.35), blurRadius: 20, offset: const Offset(0, 8))],
-    ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
-          child: Row(children: [
-            const Icon(Icons.circle, color: Colors.white, size: 8), const SizedBox(width: 6),
-            Text(L.chargingNow,
-                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+  Widget _activeSession() {
+    final session = UserSession.instance;
+    final secs    = session.chargeSecs;
+    final m       = secs ~/ 60;
+    final s       = secs % 60;
+    final timeStr = m > 0 ? '${m}m ${s}s' : '${s}s';
+
+    return GestureDetector(
+      onTap: () => goTo(context, StartChargeScreen()),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+              colors: [kGreen.withOpacity(0.9), const Color(0xFF00B37A)],
+              begin: Alignment.topLeft, end: Alignment.bottomRight),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: kGreen.withOpacity(0.35), blurRadius: 20, offset: const Offset(0, 8))]),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+              child: Row(children: [
+                const Icon(Icons.circle, color: Colors.white, size: 8), const SizedBox(width: 6),
+                Text(L.chargingNow,
+                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+              ])),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
+              child: const Text('Tap to manage',
+                  style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700))),
           ]),
-        ),
-        const Spacer(),
-        GestureDetector(
-          onTap: () => setState(() => _isCharging = false),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-            decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
-            child: Text(L.stop,
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
-          ),
-        ),
-      ]),
-      const SizedBox(height: 14),
-      Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-        Text('$_chargePercent%',
-            style: const TextStyle(color: Colors.black, fontSize: 52, fontWeight: FontWeight.w900, height: 1)),
-        const SizedBox(width: 14),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const SizedBox(height: 8),
-          ClipRRect(borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(value: _chargePercent / 100,
-              backgroundColor: Colors.black.withOpacity(0.2),
-              valueColor: const AlwaysStoppedAnimation(Colors.black), minHeight: 10)),
-          const SizedBox(height: 6),
-          Text('$_minutesLeft min remaining · An-Najah EV',
-              style: TextStyle(color: Colors.black.withOpacity(0.65), fontSize: 11)),
-        ])),
-      ]),
-      const SizedBox(height: 12),
-      Row(children: [
-        _ss('⚡', '22 kW', 'Power'),
-        Container(width: 1, height: 30, color: Colors.black.withOpacity(0.15)),
-        _ss('🔋', '14.3 kWh', 'Added'),
-        Container(width: 1, height: 30, color: Colors.black.withOpacity(0.15)),
-        _ss('💰', '2.5 NIS', 'Per kWh'),
-      ]),
-    ]),
-  );
+          const SizedBox(height: 14),
+          Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text('$_chargePercent%',
+                style: const TextStyle(color: Colors.black, fontSize: 52, fontWeight: FontWeight.w900, height: 1)),
+            const SizedBox(width: 14),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const SizedBox(height: 8),
+              ClipRRect(borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(value: _chargePercent / 100,
+                  backgroundColor: Colors.black.withOpacity(0.2),
+                  valueColor: const AlwaysStoppedAnimation(Colors.black), minHeight: 10)),
+              const SizedBox(height: 6),
+              Text('$timeStr · ${session.chargeName}',
+                  style: TextStyle(color: Colors.black.withOpacity(0.65), fontSize: 11)),
+            ])),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            _ss('⚡', timeStr, 'Duration'),
+            Container(width: 1, height: 30, color: Colors.black.withOpacity(0.15)),
+            _ss('🔋', '${session.chargeKwh.toStringAsFixed(2)} kWh', 'Added'),
+            Container(width: 1, height: 30, color: Colors.black.withOpacity(0.15)),
+            _ss('💰', '${session.chargeCost.toStringAsFixed(2)} NIS', 'Cost'),
+          ]),
+        ])));
+  }
 
   Widget _ss(String e, String v, String l) => Expanded(
     child: Column(children: [
@@ -235,11 +307,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Quick Stats ───────────────────────────────────────────
   Widget _quickStats(BuildContext ctx) => Row(children: [
-    _chip(ctx, '12',     'Sessions',     Icons.bolt,                  HistoryScreen()),
+    _chip(ctx, '$_statSessions', 'Sessions', Icons.bolt, HistoryScreen()),
     const SizedBox(width: 10),
-    _chip(ctx, '340 kWh','Charged',      Icons.battery_charging_full, HistoryScreen()),
+    _chip(ctx, '${_statKwh.toStringAsFixed(1)} kWh', 'Charged', Icons.battery_charging_full, HistoryScreen()),
     const SizedBox(width: 10),
-    _chip(ctx, '85 kg',  'CO₂ Saved ♻️', Icons.eco,                  EcoStatsScreen()),
+    _chip(ctx, '${UserSession.instance.points} pts', 'Points ⭐', Icons.eco, EcoStatsScreen()),
   ]);
 
   Widget _chip(BuildContext ctx, String val, String label, IconData icon, Widget page) =>
@@ -253,33 +325,67 @@ class _HomeScreenState extends State<HomeScreen> {
         ]))));
 
   // ── Recommendation ────────────────────────────────────────
-  Widget _recommendation(BuildContext ctx) => GestureDetector(
-    onTap: () => goTo(ctx, ChargerDetailScreen({
-      'name': 'An-Najah EV Station',
-      'power': '50 kW',
-      'connector': 'CCS2',
-      'price': 2.5,
-      'available': true,
-      'location': {'address': 'An-Najah University, Nablus'},
-      'rating': 4.8,
-    })),
-    child: Container(padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: kGreen.withOpacity(0.07),
-          borderRadius: BorderRadius.circular(16), border: Border.all(color: kGreen.withOpacity(0.25))),
-      child: Row(children: [
-        Container(width: 42, height: 42,
-            decoration: BoxDecoration(color: kGreen.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
-            child: const Icon(Icons.auto_awesome, color: kGreen, size: 22)),
-        const SizedBox(width: 14),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Smart Recommendation',
-              style: TextStyle(color: kGreen, fontSize: 11, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text('An-Najah EV Station is available — your favorite!', style: kSub(12), maxLines: 2),
-        ])),
-        const Icon(Icons.arrow_forward_ios, color: kGreen, size: 14),
-      ])),
-  );
+  Widget _recommendation(BuildContext ctx) {
+    if (_loadingAI) {
+      return Container(padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: kGreen.withOpacity(0.07),
+            borderRadius: BorderRadius.circular(16), border: Border.all(color: kGreen.withOpacity(0.25))),
+        child: Row(children: [
+          const SizedBox(width: 20, height: 20,
+              child: CircularProgressIndicator(color: kGreen, strokeWidth: 2)),
+          const SizedBox(width: 14),
+          Text('Finding best station for you...', style: kSub(13)),
+        ]));
+    }
+
+    if (_aiRecommendation == null) {
+      return Container(padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: kGreen.withOpacity(0.07),
+            borderRadius: BorderRadius.circular(16), border: Border.all(color: kGreen.withOpacity(0.25))),
+        child: Row(children: [
+          const Icon(Icons.auto_awesome, color: kGreen, size: 22), const SizedBox(width: 14),
+          Expanded(child: Text('No available stations right now', style: kSub(12))),
+        ]));
+    }
+
+    final rec = _aiRecommendation!;
+    return GestureDetector(
+      onTap: () => goTo(ctx, ChargerDetailScreen(rec)),
+      child: Container(padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: kGreen.withOpacity(0.07),
+            borderRadius: BorderRadius.circular(16), border: Border.all(color: kGreen.withOpacity(0.25))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(width: 42, height: 42,
+                decoration: BoxDecoration(color: kGreen.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.auto_awesome, color: kGreen, size: 22)),
+            const SizedBox(width: 14),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('🤖 AI Smart Recommendation',
+                  style: TextStyle(color: kGreen, fontSize: 11, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(rec['name'] as String, style: kTitle(14)),
+            ])),
+            const Icon(Icons.arrow_forward_ios, color: kGreen, size: 14),
+          ]),
+          const SizedBox(height: 10),
+          Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(color: kGreen.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+            child: Text(rec['reason'] as String? ?? 'Best match for you',
+                style: const TextStyle(color: kGreen, fontSize: 11))),
+          const SizedBox(height: 8),
+          Row(children: [
+            Icon(Icons.bolt, size: 12, color: cSub2),
+            Text(' ${rec['power']}', style: kSub(11)),
+            const SizedBox(width: 12),
+            Icon(Icons.electrical_services, size: 12, color: cSub2),
+            Text(' ${rec['connector']}', style: kSub(11)),
+            const SizedBox(width: 12),
+            Icon(Icons.attach_money, size: 12, color: cSub2),
+            Text(' ${rec['price']} NIS/kWh', style: kSub(11)),
+          ]),
+        ])));
+  }
 
   // ── Promos ────────────────────────────────────────────────
   Widget _promoSection(BuildContext ctx) => Column(
@@ -318,7 +424,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── Mini Map ──────────────────────────────────────────────
   Widget _miniMap(BuildContext ctx) => GestureDetector(
-    onTap: () => goTo(ctx, AllStationsScreen()),
+    onTap: () => goTo(ctx, const MapScreen()),
     child: Container(height: 130,
       decoration: BoxDecoration(color: AppSettings.instance.isDark ? const Color(0xFF0D1421) : const Color(0xFFEEF2F7),
           borderRadius: BorderRadius.circular(16), border: Border.all(color: cBorder)),
@@ -348,37 +454,61 @@ class _HomeScreenState extends State<HomeScreen> {
     child: Icon(Icons.ev_station, color: c, size: 10));
 
   // ── Recent Bookings ───────────────────────────────────────
-  Widget _recentSection(BuildContext ctx) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(L.recentBook, style: kTitle(16)),
-        GestureDetector(onTap: () => goTo(ctx, BookingsScreen()),
-          child: Text(L.viewAll, style: const TextStyle(color: kGreen, fontSize: 13, fontWeight: FontWeight.w600))),
-      ]),
-      const SizedBox(height: 12),
-      ..._recentBookings.map((b) {
-        final color = Color(b['color'] as int);
-        return GestureDetector(onTap: () => goTo(ctx, BookingDetailScreen(b)),
-          child: Container(margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(14),
-            decoration: kCardDeco(radius: 14),
+  Widget _recentSection(BuildContext ctx) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text(L.recentBook, style: kTitle(16)),
+          GestureDetector(onTap: () => goTo(ctx, BookingsScreen()),
+            child: Text(L.viewAll,
+                style: const TextStyle(color: kGreen, fontSize: 13, fontWeight: FontWeight.w600))),
+        ]),
+        const SizedBox(height: 12),
+        if (_loadingBookings)
+          const Center(child: Padding(padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(color: kGreen, strokeWidth: 2)))
+        else if (_recentBookings.isEmpty)
+          Container(padding: const EdgeInsets.all(16), decoration: kCardDeco(),
             child: Row(children: [
-              Container(width: 42, height: 42,
-                  decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                  child: Icon(Icons.ev_station, color: color, size: 22)),
+              Icon(Icons.calendar_today_outlined, color: cSub2, size: 20),
               const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(b['station'] as String, style: kTitle(13)),
-                Text(b['date'] as String, style: kSub(11)),
-              ])),
-              Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(20)),
-                child: Text(b['status'] as String,
-                    style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700))),
-            ])));
-      }),
-    ],
-  );
+              Text('No recent bookings', style: kSub(13)),
+            ]))
+        else
+          ..._recentBookings.map((b) {
+            final status  = b['status'] as String? ?? 'Upcoming';
+            final station = b['station'];
+            final stName  = station is Map ? station['name'] as String : 'Station';
+            final color   = status == 'Upcoming' ? kGreen
+                : status == 'Completed' ? Colors.blueAccent : Colors.redAccent;
+            return GestureDetector(
+              onTap: () => goTo(ctx, BookingsScreen()),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: kCardDeco(radius: 14),
+                child: Row(children: [
+                  Container(width: 42, height: 42,
+                      decoration: BoxDecoration(color: color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12)),
+                      child: Icon(Icons.ev_station, color: color, size: 22)),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(stName, style: kTitle(13)),
+                    Text('${b['date']}  ${b['time']}', style: kSub(11)),
+                  ])),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(color: color.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text(status,
+                        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700))),
+                ])));
+          }),
+      ],
+    );
+  }
 
   // ── Helpers ───────────────────────────────────────────────
   Widget _actionBtn(BuildContext ctx, IconData icon, String label, bool hl, Widget page) =>
@@ -395,7 +525,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ])));
 
   Widget _stationCard(BuildContext ctx, Map<String, dynamic> s) {
-    final ok = s['ok'] as bool;
+    final ok = s['available'] as bool? ?? true;
+    final name  = s['name'] as String? ?? 'Station';
+    final power = s['power'] as String? ?? '22 kW';
+    final price = '${s['price']?.toString() ?? '2.5'} NIS';
     return GestureDetector(onTap: () => goTo(ctx, ChargerDetailScreen(s)),
       child: Container(margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16),
         decoration: kCardDeco(),
@@ -406,16 +539,15 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Icon(Icons.ev_station, color: ok ? kGreen : Colors.redAccent, size: 24)),
           const SizedBox(width: 14),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(s['name'] as String, style: kTitle(13)),
+            Text(name, style: kTitle(13)),
             Row(children: [
               Icon(Icons.bolt, size: 12, color: cSub2),
-              Text(' ${s['kw']}', style: kSub(12)), const SizedBox(width: 8),
+              Text(' $power', style: kSub(12)), const SizedBox(width: 8),
               Icon(Icons.attach_money, size: 12, color: cSub2),
-              Text(s['price'] as String, style: kSub(12)),
+              Text(price, style: kSub(12)),
             ]),
           ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(s['dist'] as String, style: kTitle(13)), const SizedBox(height: 4),
             Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(color: ok ? kGreen.withOpacity(0.15) : Colors.red.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(20)),

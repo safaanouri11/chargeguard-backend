@@ -8,11 +8,16 @@
     "dev": "node --watch server.js",
     "seed": "node -e \"fetch('http://localhost:3000/api/stations/seed',{method:'POST'}).then(r=>r.json()).then(console.log)\""
   },
-  "keywords": ["ev", "charging", "api"],
+  "keywords": [
+    "ev",
+    "charging",
+    "api"
+  ],
   "author": "ChargeGuard Team",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.88.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",

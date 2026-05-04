@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 import '../utils/api_service.dart';
+import 'host_signup_screen.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -79,7 +80,7 @@ class _SignupScreenState extends State<SignupScreen> {
         lastName:  _lastCtrl.text.trim(),
         email:     _emailCtrl.text.trim(),
         password:  _passCtrl.text,
-        role:      _role == 0 ? 'driver' : 'host',
+        role:      'driver',
         region:    _region,
       );
 
@@ -163,16 +164,8 @@ class _SignupScreenState extends State<SignupScreen> {
     const Text('Create Account',
         style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w900)),
     const SizedBox(height: 6),
-    const Text('Tell us who you are', style: TextStyle(color: Colors.white54, fontSize: 14)),
+    const Text('Sign up as an EV Driver', style: TextStyle(color: Colors.white54, fontSize: 14)),
     const SizedBox(height: 28),
-    const Text('I am a...', style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.w600)),
-    const SizedBox(height: 12),
-    Row(children: [
-      _roleCard(0, Icons.directions_car_outlined, 'EV Driver',    'Find & book chargers'),
-      const SizedBox(width: 12),
-      _roleCard(1, Icons.home_outlined,           'Charger Host', 'Earn from your charger'),
-    ]),
-    const SizedBox(height: 24),
     _lbl('First Name'),
     _tf(_firstCtrl, 'Enter first name', Icons.person_outline),
     const SizedBox(height: 16),
@@ -201,12 +194,12 @@ class _SignupScreenState extends State<SignupScreen> {
         child: Row(children: [
           Container(width: 44, height: 44,
             decoration: BoxDecoration(color: kGreen.withOpacity(0.12), shape: BoxShape.circle),
-            child: Icon(_role == 0 ? Icons.directions_car : Icons.home_outlined, color: kGreen, size: 22)),
+            child: const Icon(Icons.directions_car, color: kGreen, size: 22)),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${_firstCtrl.text} ${_lastCtrl.text}',
                 style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
-            Text('${_role == 0 ? 'EV Driver' : 'Charger Host'} · $_region',
+            Text('EV Driver · $_region',
                 style: const TextStyle(color: Colors.white54, fontSize: 12)),
           ])),
           GestureDetector(onTap: () => setState(() { _step = 1; _submitted = false; }),

@@ -1,27 +1,37 @@
 const mongoose = require('mongoose');
-const bcrypt   = require('bcryptjs');
 const userSchema = new mongoose.Schema({
   firstName:  { type: String, required: true },
   lastName:   { type: String, required: true },
   email:      { type: String, required: true, unique: true, lowercase: true },
   password:   { type: String, required: true },
   phone:      { type: String, default: '' },
-  role:       { type: String, enum: ['driver', 'host'], default: 'driver' },
+  role:       { type: String, default: 'driver' },
   region:     { type: String, default: 'Palestine' },
   vehicle:    { type: String, default: '' },
   connector:  { type: String, default: 'CCS2' },
-  avatar:     { type: String, default: '' },   // base64 or URL
+  avatar:     { type: String, default: '' },
   balance:    { type: Number, default: 0 },
   points:     { type: Number, default: 0 },
+  batteryPct: { type: Number, default: 65 },
+  // Host fields
+  bio:          { type: String, default: '' },
+  businessName: { type: String, default: '' },
+  bankName:     { type: String, default: '' },
+  iban:         { type: String, default: '' },
+  hostEarnings: { type: Number, default: 0 },
+  hostPayouts:  { type: Number, default: 0 },
+  // Host verification
+  hostStatus:      { type: String, default: 'None' }, // None, Pending, Approved, Rejected
+  idImage:         { type: String, default: '' },
+  licenseImage:    { type: String, default: '' },
+  rejectionReason: { type: String, default: '' },
+  approvedAt:      { type: Date, default: null },
+  // Password Reset
+  resetCode:       { type: String,  default: null },
+  resetExpiry:     { type: Date,    default: null },
+  // Host notifications
+  notifBookings: { type: Boolean, default: true },
+  notifPayouts:  { type: Boolean, default: true },
+  notifReviews:  { type: Boolean, default: true },
 }, { timestamps: true });
-// Hash password before save
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 10);
-  next();
-});
-// Compare password
-userSchema.methods.matchPassword = async function(entered) {
-  return await bcrypt.compare(entered, this.password);
-};
 module.exports = mongoose.model('User', userSchema);

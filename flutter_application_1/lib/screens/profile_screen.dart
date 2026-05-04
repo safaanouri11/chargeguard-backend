@@ -1,6 +1,6 @@
-import 'dart:convert';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import '../utils/constants.dart';
 import '../utils/app_settings.dart';
 import '../utils/api_service.dart';
@@ -9,6 +9,7 @@ import 'history_screen.dart';
 import 'offers_screen.dart';
 import 'help_support_screen.dart';
 import 'payment_methods_screen.dart';
+import 'camera_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -29,12 +30,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     AppSettings.instance.addListener(_refresh);
+    UserSession.instance.addListener(_refresh);
     _loadProfile();
   }
 
   @override
   void dispose() {
     AppSettings.instance.removeListener(_refresh);
+    UserSession.instance.removeListener(_refresh);
     super.dispose();
   }
 
@@ -51,20 +54,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ── Pick Photo ────────────────────────────────────────────
-  final _picker = ImagePicker();
-
-  Future<void> _pickImage(ImageSource source) async {
-    try {
-      final picked = await _picker.pickImage(source: source, maxWidth: 512, imageQuality: 75);
-      if (picked == null) return;
-      final bytes = await picked.readAsBytes();
-      final base64Str = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-      setState(() => _imageBase64 = base64Str);
-      await ApiService.instance.updateProfile({'avatar': base64Str});
-      if (mounted) _snack('Photo updated!');
-    } catch (e) {
-      if (mounted) _snack('Could not pick image');
-    }
+  void _pickImage(String source) {
+    final input = html.FileUploadInputElement();
+    input.accept   = 'image/*';
+    input.multiple = false;
+    if (source == 'camera') input.setAttribute('capture', 'user');
+    input.click();
+    input.onChange.listen((event) {
+      final file = input.files?.first;
+      if (file == null) return;
+      final reader = html.FileReader();
+      reader.readAsDataUrl(file);
+      reader.onLoad.listen((_) async {
+        final base64 = reader.result as String;
+        setState(() => _imageBase64 = base64);
+        // Save to backend
+        await ApiService.instance.updateProfile({'avatar': base64});
+        if (mounted) Navigator.pop(context);
+        _snack('Photo updated! ✅');
+      });
+    });
   }
 
   void _pickPhoto() {
@@ -92,7 +101,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () {
                   setState(() { _avatarColorIdx = i; _imageBase64 = null; });
                   Navigator.pop(context);
-                  _snack('Avatar updated!');
+                  _snack('Avatar updated! ✅');
                 },
                 child: AnimatedContainer(duration: const Duration(milliseconds: 200),
                   width: sel ? 56 : 46, height: sel ? 56 : 46,
@@ -105,15 +114,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 22),
           Row(children: [
-            Expanded(child: _photoBtn(Icons.camera_alt_outlined, 'Camera', kGreen, () {
+            Expanded(child: _photoBtn(Icons.camera_alt_outlined, 'Camera', kGreen, () async {
               Navigator.pop(context);
-              _pickImage(ImageSource.camera);
+              final result = await Navigator.push<String>(context,
+                  MaterialPageRoute(builder: (_) => const CameraScreen()));
+              if (result != null && mounted) {
+                setState(() => _imageBase64 = result);
+                // Upload to backend
+                final res = await ApiService.instance.uploadAvatar(result);
+                if (mounted) {
+                  if (res['success']) {
+                    // Update UserSession
+                    UserSession.instance.setAvatar(result);
+                    _snack('Photo updated! ✅');
+                  } else {
+                    _snack(res['message'] ?? 'Upload failed');
+                  }
+                }
+              }
             })),
             const SizedBox(width: 12),
-            Expanded(child: _photoBtn(Icons.photo_library_outlined, 'Gallery', Colors.blueAccent, () {
-              Navigator.pop(context);
-              _pickImage(ImageSource.gallery);
-            })),
+            Expanded(child: _photoBtn(Icons.photo_library_outlined, 'Gallery', Colors.blueAccent,
+                () => _pickImage('gallery'))),
             const SizedBox(width: 12),
             Expanded(child: _photoBtn(Icons.delete_outline, 'Remove', Colors.redAccent, () {
               setState(() => _imageBase64 = null);
@@ -439,6 +461,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => goTo(context, const HelpSupportScreen())),
             _menu(Icons.settings_outlined,    L.settings,         'Theme, language & more',
                 onTap: () => goTo(context, const SettingsScreen())),
+            _menu(Icons.lock_outlined,        'Change Password',  'Update your password',
+                onTap: () => _showChangePassword(context)),
             const SizedBox(height: 12),
 
             // ── Logout ───────────────────────────────────────
@@ -501,4 +525,110 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ])),
           Icon(Icons.chevron_right, color: cSub2, size: 18),
         ])));
+  void _showChangePassword(BuildContext context) {
+    final oldCtrl  = TextEditingController();
+    final newCtrl  = TextEditingController();
+    final confCtrl = TextEditingController();
+    bool loading   = false;
+    bool obsOld = true, obsNew = true, obsConf = true;
+
+    showModalBottomSheet(
+      context: context, isScrollControlled: true,
+      backgroundColor: cCard,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => StatefulBuilder(builder: (ctx, set) => Padding(
+        padding: EdgeInsets.only(left: 24, right: 24, top: 24,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 36, height: 4,
+              decoration: BoxDecoration(color: cBorder, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          Text('Change Password', style: kTitle(18)),
+          const SizedBox(height: 20),
+
+          // Old password
+          TextField(controller: oldCtrl, obscureText: obsOld,
+            style: TextStyle(color: cTitle),
+            decoration: InputDecoration(
+              labelText: 'Current Password', labelStyle: TextStyle(color: cSub),
+              prefixIcon: Icon(Icons.lock_outline, color: cSub2, size: 20),
+              suffixIcon: IconButton(
+                icon: Icon(obsOld ? Icons.visibility_off : Icons.visibility, color: cSub2, size: 18),
+                onPressed: () => set(() => obsOld = !obsOld)),
+              filled: true, fillColor: cBg,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: cBorder)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: cBorder)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: kGreen, width: 1.5)))),
+          const SizedBox(height: 12),
+
+          // New password
+          TextField(controller: newCtrl, obscureText: obsNew,
+            style: TextStyle(color: cTitle),
+            decoration: InputDecoration(
+              labelText: 'New Password', labelStyle: TextStyle(color: cSub),
+              prefixIcon: Icon(Icons.lock_outline, color: cSub2, size: 20),
+              suffixIcon: IconButton(
+                icon: Icon(obsNew ? Icons.visibility_off : Icons.visibility, color: cSub2, size: 18),
+                onPressed: () => set(() => obsNew = !obsNew)),
+              filled: true, fillColor: cBg,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: cBorder)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: cBorder)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: kGreen, width: 1.5)))),
+          const SizedBox(height: 12),
+
+          // Confirm password
+          TextField(controller: confCtrl, obscureText: obsConf,
+            style: TextStyle(color: cTitle),
+            decoration: InputDecoration(
+              labelText: 'Confirm New Password', labelStyle: TextStyle(color: cSub),
+              prefixIcon: Icon(Icons.lock_outline, color: cSub2, size: 20),
+              suffixIcon: IconButton(
+                icon: Icon(obsConf ? Icons.visibility_off : Icons.visibility, color: cSub2, size: 18),
+                onPressed: () => set(() => obsConf = !obsConf)),
+              filled: true, fillColor: cBg,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: cBorder)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: cBorder)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: kGreen, width: 1.5)))),
+          const SizedBox(height: 20),
+
+          SizedBox(width: double.infinity, height: 52,
+            child: ElevatedButton(
+              onPressed: loading ? null : () async {
+                if (newCtrl.text != confCtrl.text) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Passwords do not match'), backgroundColor: kRed,
+                    behavior: SnackBarBehavior.floating));
+                  return;
+                }
+                if (newCtrl.text.length < 6) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Min 6 characters'), backgroundColor: kRed,
+                    behavior: SnackBarBehavior.floating));
+                  return;
+                }
+                set(() => loading = true);
+                final result = await ApiService.instance.changePassword(
+                  oldPassword: oldCtrl.text,
+                  newPassword: newCtrl.text);
+                if (ctx.mounted) {
+                  set(() => loading = false);
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(result['success'] ? 'Password changed ✅' : result['message'] ?? 'Error'),
+                    backgroundColor: result['success'] ? cCard : kRed,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: kGreen, foregroundColor: Colors.black,
+                  disabledBackgroundColor: kGreen.withOpacity(0.3),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+              child: loading
+                  ? const SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                  : const Text('Update Password',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)))),
+        ]))));
+  }
+
 }

@@ -3,31 +3,37 @@ const express  = require('express');
 const mongoose = require('mongoose');
 const cors     = require('cors');
 const app = express();
-// ── Middleware ─────────────────────────────────────────────
-app.use(cors());
+app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
-// ── Routes ─────────────────────────────────────────────────
+// ── Routes ────────────────────────────────────────────────
 app.use('/api/auth',     require('./routes/auth'));
 app.use('/api/users',    require('./routes/users'));
 app.use('/api/stations', require('./routes/stations'));
 app.use('/api/bookings', require('./routes/bookings'));
 app.use('/api/payments', require('./routes/payments'));
-// ── Health Check ───────────────────────────────────────────
-app.get('/', (req, res) => {
-  res.json({ message: ' ChargeGuard API is running!', status: 'ok' });
+app.use('/api/cards',    require('./routes/cards'));
+app.use('/api/charging', require('./routes/charging'));
+app.use('/api/support',  require('./routes/support'));
+app.use('/api/offers',   require('./routes/offers'));
+app.use('/api/bookmarks', require('./routes/bookmarks'));
+app.use('/api/host',     require('./routes/host'));
+app.use('/api/admin',    require('./routes/admin'));
+app.use('/api/ai',       require('./routes/ai'));
+// ── Health Check ──────────────────────────────────────────
+app.get('/', function(req, res) {
+  res.json({ message: 'ChargeGuard API is running!', status: 'ok' });
 });
-// ── Connect to MongoDB ─────────────────────────────────────
-const PORT = process.env.PORT || 3000;
-const URI  = process.env.MONGODB_URI || 'mongodb://localhost:27017/chargeguard';
-console.log(' Connecting to MongoDB...');
+// ── Start Server ──────────────────────────────────────────
+var PORT = process.env.PORT || 3000;
+var URI  = process.env.MONGODB_URI || 'mongodb://localhost:27017/chargeguard';
+console.log('Connecting to MongoDB...');
 mongoose.connect(URI)
-  .then(() => {
-    console.log(' MongoDB Connected');
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(` Server running on http://0.0.0.0:${PORT}`);
+  .then(function() {
+    console.log('MongoDB Connected');
+    app.listen(PORT, function() {
+      console.log('Server running on http://localhost:' + PORT);
     });
   })
-  .catch(err => {
-    console.error(' MongoDB Error:', err.message);
-    console.error(' Make sure MongoDB is running: mongod --dbpath ./data');
+  .catch(function(err) {
+    console.error('MongoDB Error:', err.message);
   });
