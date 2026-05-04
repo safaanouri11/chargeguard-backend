@@ -108,6 +108,7 @@ router.post('/route', protect, async function(req, res) {
       var kwhNeeded = (chargeToPct - arrivalPct) * kwhPerPct;
       var stationPower = parseInt(pick.c.s.power) || 22;
       var minutes = Math.round((kwhNeeded / stationPower) * 60);
+      var stopCost = Math.round(kwhNeeded * (pick.c.s.price || 0) * 100) / 100;
       stops.push({
         stationId:    pick.c.s._id,
         name:         pick.c.s.name,
@@ -121,7 +122,9 @@ router.post('/route', protect, async function(req, res) {
         legKm:        Math.round(pick.legKm * 10) / 10,
         arrivalBatteryPct: Math.round(arrivalPct),
         chargeToPct:  chargeToPct,
+        kwhCharged:   Math.round(kwhNeeded * 10) / 10,
         estimatedChargeMinutes: minutes,
+        estimatedCost: stopCost,
       });
       cursorAdvance = pick.c.dStart;
       batteryPct = chargeToPct;
@@ -129,6 +132,15 @@ router.post('/route', protect, async function(req, res) {
       lastIdx = pick.idx;
     }
     var feasible = (cursorAdvance + cursorRange * (1 - reserveBuffer)) >= totalDistance;
+    // Final leg from last cursor to destination
+    var finalLegKm = Math.max(0, totalDistance - cursorAdvance);
+    var finalArrivalPct = Math.max(0, batteryPct - (finalLegKm / rangeKm) * 100);
+    // Aggregates
+    var avgSpeedKph = 70;
+    var drivingMin = Math.round((totalDistance / avgSpeedKph) * 60);
+    var totalChargingMin = stops.reduce(function(s, x) { return s + x.estimatedChargeMinutes; }, 0);
+    var totalCost = Math.round(stops.reduce(function(s, x) { return s + (x.estimatedCost || 0); }, 0) * 100) / 100;
+    var totalKwh  = Math.round(stops.reduce(function(s, x) { return s + (x.kwhCharged || 0); }, 0) * 10) / 10;
     // Build a summary (Anthropic if available, deterministic fallback otherwise)
     var summary = '';
     var fallback =
@@ -163,11 +175,19 @@ router.post('/route', protect, async function(req, res) {
       summary = fallback;
     }
     res.json({
-      totalDistanceKm: Math.round(totalDistance * 10) / 10,
-      directRangeKm:   Math.round(directRange * 10) / 10,
-      feasible:        feasible,
-      stops:           stops,
-      summary:         summary,
+      totalDistanceKm:  Math.round(totalDistance * 10) / 10,
+      directRangeKm:    Math.round(directRange * 10) / 10,
+      finalLegKm:       Math.round(finalLegKm * 10) / 10,
+      finalArrivalPct:  Math.round(finalArrivalPct),
+      drivingMinutes:   drivingMin,
+      chargingMinutes:  totalChargingMin,
+      totalMinutes:     drivingMin + totalChargingMin,
+      totalCost:        totalCost,
+      totalKwh:         totalKwh,
+      stopCount:        stops.length,
+      feasible:         feasible,
+      stops:            stops,
+      summary:          summary,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

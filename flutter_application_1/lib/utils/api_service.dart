@@ -895,6 +895,35 @@ class ApiService {
     }
   }
 
+  // ── AI Route Planner ─────────────────────────────────────
+  Future<Map<String, dynamic>> planRoute({
+    required double startLat,
+    required double startLng,
+    required double endLat,
+    required double endLng,
+    double? vehicleRangeKm,
+    int? currentBatteryPct,
+    String? connector,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'startLat': startLat, 'startLng': startLng,
+        'endLat':   endLat,   'endLng':   endLng,
+      };
+      if (vehicleRangeKm    != null) body['vehicleRangeKm']    = vehicleRangeKm;
+      if (currentBatteryPct != null) body['currentBatteryPct'] = currentBatteryPct;
+      if (connector != null && connector.isNotEmpty) body['connector'] = connector;
+      final res = await http.post(
+        Uri.parse('$baseUrl/ai/route'),
+        headers: _headers,
+        body: jsonEncode(body),
+      );
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
   // ── Charging Session ─────────────────────────────────────
   Future<Map<String, dynamic>> startCharging(String stationId) async {
     try {

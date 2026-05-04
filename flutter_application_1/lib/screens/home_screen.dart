@@ -13,6 +13,7 @@ import 'eco_stats_screen.dart';
 import 'promo_detail_screen.dart';
 import 'booking_detail_screen.dart';
 import 'offers_screen.dart';
+import 'trip_planner_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -145,6 +146,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (_isCharging) ...[_activeSession(), const SizedBox(height: 20)]
             else             ...[_batteryCard(),   const SizedBox(height: 20)],
             _quickStats(context),         const SizedBox(height: 20),
+            _tripPlannerCard(context),    const SizedBox(height: 20),
             _recommendation(context),     const SizedBox(height: 20),
             Text(L.quickActions, style: kTitle(16)),
             const SizedBox(height: 14),
@@ -341,6 +343,52 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(val, style: kTitle(14)),
           Text(label, style: kSub(10), maxLines: 1, overflow: TextOverflow.ellipsis),
         ]))));
+
+  // ── Trip Planner highlight card ───────────────────────────
+  Widget _tripPlannerCard(BuildContext ctx) => GestureDetector(
+    onTap: () => goTo(ctx, const TripPlannerScreen()),
+    child: Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [kGreen.withOpacity(0.22), Colors.blueAccent.withOpacity(0.08)],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: kGreen.withOpacity(0.4)),
+      ),
+      child: Row(children: [
+        Container(
+          width: 48, height: 48,
+          decoration: BoxDecoration(
+            color: kGreen.withOpacity(0.25),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Icon(Icons.route, color: kGreen, size: 26),
+        ),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text('AI Trip Planner', style: kTitle(15)),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: kGreen, borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('NEW',
+                  style: TextStyle(color: Colors.black,
+                      fontSize: 9, fontWeight: FontWeight.w800)),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text('Plan multi-stop trips with smart charging',
+              style: kSub(12)),
+        ])),
+        const Icon(Icons.arrow_forward_ios, color: kGreen, size: 16),
+      ]),
+    ),
+  );
 
   // ── Recommendation ────────────────────────────────────────
   Widget _recommendation(BuildContext ctx) {
