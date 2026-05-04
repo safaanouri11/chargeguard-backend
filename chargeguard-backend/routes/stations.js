@@ -1,11 +1,42 @@
 const express = require('express');
 const Station = require('../models/Station');
+const { distanceKm } = require('../utils/distance');
 const router = express.Router();
 // GET /api/stations
 router.get('/', async function(req, res) {
   try {
     var stations = await Station.find();
     res.json(stations);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+// GET /api/stations/nearby?lat=&lng=&radius=&connector=
+router.get('/nearby', async function(req, res) {
+  try {
+    var lat = parseFloat(req.query.lat);
+    var lng = parseFloat(req.query.lng);
+    var radius = parseFloat(req.query.radius) || 10; // km
+    if (isNaN(lat) || isNaN(lng)) {
+      return res.status(400).json({ message: 'lat and lng query params are required' });
+    }
+    var filter = { 'location.lat': { $ne: null }, 'location.lng': { $ne: null } };
+    if (req.query.connector) filter.connector = req.query.connector;
+    if (req.query.onlyAvailable === 'true') filter.occupancy = 'free';
+    var stations = await Station.find(filter);
+    var withDistance = stations
+      .map(function(s) {
+        var d = distanceKm(lat, lng, s.location && s.location.lat, s.location && s.location.lng);
+        return { station: s, distanceKm: Math.round(d * 100) / 100 };
+      })
+      .filter(function(x) { return x.distanceKm <= radius; })
+      .sort(function(a, b) { return a.distanceKm - b.distanceKm; });
+    res.json({
+      count: withDistance.length,
+      results: withDistance.map(function(x) {
+        return Object.assign(x.station.toObject(), { distanceKm: x.distanceKm });
+      }),
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

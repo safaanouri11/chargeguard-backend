@@ -14,5 +14,9 @@ const stationSchema = new mongoose.Schema({
   parking:   [{ type: String }],
   plugCount: { type: Number, default: 1 },
   vehicles:  [{ type: String }],
+  // Real-time occupancy
+  occupancy:    { type: String, default: 'free' }, // free | busy | offline
+  currentUser:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  sessionStart: { type: Date, default: null },
 }, { timestamps: true });
 module.exports = mongoose.model('Station', stationSchema);

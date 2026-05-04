@@ -10,14 +10,25 @@ router.post('/start', protect, async function(req, res) {
   try {
     var station = await Station.findById(req.body.stationId);
     if (!station) return res.status(404).json({ message: 'Station not found' });
-    if (!station.available) return res.status(400).json({ message: 'Station is busy' });
-    await Station.findByIdAndUpdate(req.body.stationId, { available: false });
+    if (!station.available || station.occupancy === 'busy') {
+      return res.status(400).json({ message: 'Station is busy' });
+    }
+    if (station.occupancy === 'offline') {
+      return res.status(400).json({ message: 'Station is offline' });
+    }
+    var startTime = new Date();
+    await Station.findByIdAndUpdate(req.body.stationId, {
+      available:    false,
+      occupancy:    'busy',
+      currentUser:  req.user._id,
+      sessionStart: startTime,
+    });
     var session = {
       sessionId:   req.user._id + '_' + Date.now(),
       stationId:   req.body.stationId,
       stationName: station.name,
       pricePerKwh: station.price,
-      startTime:   new Date().toISOString(),
+      startTime:   startTime.toISOString(),
     };
     console.log('Charging started: ' + station.name);
     res.json({ success: true, session });
@@ -32,7 +43,12 @@ router.post('/stop', protect, async function(req, res) {
     var station = await Station.findById(stationId);
     if (!station) return res.status(404).json({ message: 'Station not found' });
     var cost = Math.round((kwhCharged || 0) * station.price * 100) / 100;
-    await Station.findByIdAndUpdate(stationId, { available: true });
+    await Station.findByIdAndUpdate(stationId, {
+      available:    true,
+      occupancy:    'free',
+      currentUser:  null,
+      sessionStart: null,
+    });
     var user = await User.findById(req.user._id);
     var newBalance = Math.max(0, user.balance - cost);
     var update = { balance: newBalance, $inc: { points: Math.floor((kwhCharged || 0) * 10) } };
