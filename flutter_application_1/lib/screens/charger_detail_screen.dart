@@ -17,9 +17,24 @@ Color _connColor(String? c) {
   }
 }
 
-class ChargerDetailScreen extends StatelessWidget {
+class ChargerDetailScreen extends StatefulWidget {
   final Map<String, dynamic> station;
   const ChargerDetailScreen(this.station, {super.key});
+  @override
+  State<ChargerDetailScreen> createState() => _ChargerDetailScreenState();
+}
+
+class _ChargerDetailScreenState extends State<ChargerDetailScreen> {
+  Map<String, dynamic> get station => widget.station;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = station['_id'] as String?;
+    if (id != null && id.isNotEmpty) {
+      ApiService.instance.trackStationView(id);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
