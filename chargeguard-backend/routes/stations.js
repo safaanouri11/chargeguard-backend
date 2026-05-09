@@ -2,16 +2,72 @@ const express = require('express');
 const Station = require('../models/Station');
 const { distanceKm } = require('../utils/distance');
 const router = express.Router();
+
+// Build a Mongo filter from the common station query params used by both
+// `/` and `/nearby`. Returns a plain object suitable for Station.find().
+function buildFilter(q) {
+  var f = {};
+  if (q.connectors) {
+    f.connector = { $in: q.connectors.split(',').map(function(s) { return s.trim(); }) };
+  } else if (q.connector) {
+    f.connector = q.connector;
+  }
+  if (q.onlyAvailable === 'true') f.occupancy = 'free';
+  if (q.minRating) {
+    var r = parseFloat(q.minRating);
+    if (!isNaN(r)) f.rating = { $gte: r };
+  }
+  if (q.networks) {
+    f.network = { $in: q.networks.split(',').map(function(s) { return s.trim(); }) };
+  }
+  if (q.amenities) {
+    var ams = q.amenities.split(',').map(function(s) { return s.trim(); });
+    f.amenities = { $all: ams };
+  }
+  if (q.parking) {
+    var pks = q.parking.split(',').map(function(s) { return s.trim(); });
+    f.parking = { $in: pks };
+  }
+  if (q.minPlugCount) {
+    var pc = parseInt(q.minPlugCount);
+    if (!isNaN(pc)) f.plugCount = { $gte: pc };
+  }
+  if (q.includeComingSoon !== 'true') {
+    // by default exclude Coming Soon; if explicitly requested, include
+    if (q.onlyComingSoon === 'true') f.status = 'Coming Soon';
+    else f.status = { $ne: 'Coming Soon' };
+  }
+  return f;
+}
+
+// Power filtering happens in-memory because `power` is a free-form string
+// like "22 kW" / "AC" / "50 kW" — too messy for Mongo.
+function powerFilter(stations, q) {
+  var min = q.minPower != null ? parseFloat(q.minPower) : null;
+  var max = q.maxPower != null ? parseFloat(q.maxPower) : null;
+  if (min == null && max == null) return stations;
+  return stations.filter(function(s) {
+    var p = parseInt(s.power) || 0; // "AC" → 0
+    if (min != null && p < min) return false;
+    if (max != null && p > max) return false;
+    return true;
+  });
+}
+
 // GET /api/stations
+// Supports: connectors=CCS2,Type 2 | connector=CCS2 | onlyAvailable=true |
+// minRating=4 | networks=Tesla,ChargePoint | amenities=WiFi,Restroom |
+// parking=Covered,Garage | minPlugCount=2 | minPower=22 | maxPower=350 |
+// includeComingSoon=true | onlyComingSoon=true
 router.get('/', async function(req, res) {
   try {
-    var stations = await Station.find();
-    res.json(stations);
+    var stations = await Station.find(buildFilter(req.query));
+    res.json(powerFilter(stations, req.query));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
-// GET /api/stations/nearby?lat=&lng=&radius=&connector=
+// GET /api/stations/nearby?lat=&lng=&radius=&...filters
 router.get('/nearby', async function(req, res) {
   try {
     var lat = parseFloat(req.query.lat);
@@ -20,10 +76,11 @@ router.get('/nearby', async function(req, res) {
     if (isNaN(lat) || isNaN(lng)) {
       return res.status(400).json({ message: 'lat and lng query params are required' });
     }
-    var filter = { 'location.lat': { $ne: null }, 'location.lng': { $ne: null } };
-    if (req.query.connector) filter.connector = req.query.connector;
-    if (req.query.onlyAvailable === 'true') filter.occupancy = 'free';
+    var filter = buildFilter(req.query);
+    filter['location.lat'] = { $ne: null };
+    filter['location.lng'] = { $ne: null };
     var stations = await Station.find(filter);
+    stations = powerFilter(stations, req.query);
     var withDistance = stations
       .map(function(s) {
         var d = distanceKm(lat, lng, s.location && s.location.lat, s.location && s.location.lng);
@@ -36,6 +93,26 @@ router.get('/nearby', async function(req, res) {
       results: withDistance.map(function(x) {
         return Object.assign(x.station.toObject(), { distanceKm: x.distanceKm });
       }),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+// GET /api/stations/filters — returns the distinct values available so the
+// UI can show only filter options that actually have data behind them.
+router.get('/filters', async function(req, res) {
+  try {
+    var [connectors, networks, amenities, parking] = await Promise.all([
+      Station.distinct('connector'),
+      Station.distinct('network'),
+      Station.distinct('amenities'),
+      Station.distinct('parking'),
+    ]);
+    res.json({
+      connectors: connectors.filter(Boolean),
+      networks:   networks.filter(Boolean),
+      amenities:  amenities.filter(Boolean),
+      parking:    parking.filter(Boolean),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

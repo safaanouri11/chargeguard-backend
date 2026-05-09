@@ -38,5 +38,10 @@ const userSchema = new mongoose.Schema({
   referredBy:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   referralCount:    { type: Number, default: 0 },
   referralEarnings: { type: Number, default: 0 },
+  // Recently viewed stations (capped to 20, newest first)
+  recentlyViewed:   [{
+    station:  { type: mongoose.Schema.Types.ObjectId, ref: 'Station' },
+    viewedAt: { type: Date, default: Date.now },
+  }],
 }, { timestamps: true });
 module.exports = mongoose.model('User', userSchema);

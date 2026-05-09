@@ -14,6 +14,7 @@ import 'promo_detail_screen.dart';
 import 'booking_detail_screen.dart';
 import 'offers_screen.dart';
 import 'trip_planner_screen.dart';
+import 'loyalty_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -39,6 +40,13 @@ class _HomeScreenState extends State<HomeScreen> {
   double _statKwh      = 0;
   bool   _loadingStats = true;
 
+  // Eco + Loyalty (loaded together)
+  double _co2KgSaved      = 0;
+  double _treesEquivalent = 0;
+  String _loyaltyTier     = 'Bronze';
+  int    _loyaltyDiscount = 0;
+  bool   _loadingEco      = true;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +56,28 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadAI();
     _loadBookings();
     _loadStats();
+    _loadEcoAndLoyalty();
+  }
+
+  Future<void> _loadEcoAndLoyalty() async {
+    final results = await Future.wait([
+      ApiService.instance.getCO2(),
+      ApiService.instance.getLoyalty(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _loadingEco = false;
+      if (results[0]['success']) {
+        final d = results[0]['data'] as Map<String, dynamic>;
+        _co2KgSaved      = (d['co2KgSaved']      as num?)?.toDouble() ?? 0;
+        _treesEquivalent = (d['treesEquivalent'] as num?)?.toDouble() ?? 0;
+      }
+      if (results[1]['success']) {
+        final d = results[1]['data'] as Map<String, dynamic>;
+        _loyaltyTier     = d['tier'] as String? ?? 'Bronze';
+        _loyaltyDiscount = (d['discountPct'] as num?)?.toInt() ?? 0;
+      }
+    });
   }
 
   @override
@@ -146,6 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (_isCharging) ...[_activeSession(), const SizedBox(height: 20)]
             else             ...[_batteryCard(),   const SizedBox(height: 20)],
             _quickStats(context),         const SizedBox(height: 20),
+            _ecoLoyaltyRow(context),      const SizedBox(height: 20),
             _tripPlannerCard(context),    const SizedBox(height: 20),
             _recommendation(context),     const SizedBox(height: 20),
             Text(L.quickActions, style: kTitle(16)),
@@ -389,6 +420,112 @@ class _HomeScreenState extends State<HomeScreen> {
       ]),
     ),
   );
+
+  // ── Eco + Loyalty row (CO2 saved + tier badge) ────────────
+  Widget _ecoLoyaltyRow(BuildContext ctx) => Row(children: [
+    Expanded(child: _ecoCard(ctx)),
+    const SizedBox(width: 10),
+    Expanded(child: _loyaltyMiniCard(ctx)),
+  ]);
+
+  Widget _ecoCard(BuildContext ctx) => GestureDetector(
+    onTap: () => goTo(ctx, const EcoStatsScreen()),
+    child: Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [kGreen.withOpacity(0.18), Colors.green.withOpacity(0.04)],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kGreen.withOpacity(0.35)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: kGreen.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.eco, color: kGreen, size: 16),
+          ),
+          const SizedBox(width: 6),
+          Text('CO₂ Saved', style: kSub(11)),
+        ]),
+        const SizedBox(height: 10),
+        if (_loadingEco)
+          const SizedBox(height: 22, width: 22,
+              child: CircularProgressIndicator(color: kGreen, strokeWidth: 2))
+        else ...[
+          Text('${_co2KgSaved.toStringAsFixed(1)} kg',
+              style: kTitle(20).copyWith(color: kGreen, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 2),
+          Text('≈ ${_treesEquivalent.toStringAsFixed(1)} trees 🌳',
+              style: kSub(11)),
+        ],
+      ]),
+    ),
+  );
+
+  Color _tierColor(String tier) {
+    switch (tier) {
+      case 'Gold':   return const Color(0xFFFFD700);
+      case 'Silver': return const Color(0xFFC0C0C0);
+      default:       return const Color(0xFFCD7F32);
+    }
+  }
+
+  IconData _tierIcon(String tier) {
+    switch (tier) {
+      case 'Gold':   return Icons.workspace_premium;
+      case 'Silver': return Icons.military_tech;
+      default:       return Icons.emoji_events;
+    }
+  }
+
+  Widget _loyaltyMiniCard(BuildContext ctx) {
+    final color = _tierColor(_loyaltyTier);
+    return GestureDetector(
+      onTap: () => goTo(ctx, const LoyaltyScreen()),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [color.withOpacity(0.22), color.withOpacity(0.04)],
+            begin: Alignment.topLeft, end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(_tierIcon(_loyaltyTier), color: color, size: 16),
+            ),
+            const SizedBox(width: 6),
+            Text('Loyalty', style: kSub(11)),
+          ]),
+          const SizedBox(height: 10),
+          if (_loadingEco)
+            const SizedBox(height: 22, width: 22,
+                child: CircularProgressIndicator(color: kGreen, strokeWidth: 2))
+          else ...[
+            Text(_loyaltyTier,
+                style: kTitle(20).copyWith(color: color, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 2),
+            Text(_loyaltyDiscount > 0 ? '$_loyaltyDiscount% off bookings' : 'Earn points!',
+                style: kSub(11)),
+          ],
+        ]),
+      ),
+    );
+  }
 
   // ── Recommendation ────────────────────────────────────────
   Widget _recommendation(BuildContext ctx) {

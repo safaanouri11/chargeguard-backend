@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 import '../utils/api_service.dart';
+import '../utils/station_filters.dart';
 import 'charger_detail_screen.dart';
+import 'map_filters_screen.dart';
 
 Color _connectorColor(String? c) {
   switch (c?.toUpperCase()) {
@@ -30,11 +32,22 @@ class _AllStationsScreenState extends State<AllStationsScreen> {
   void initState() {
     super.initState();
     _loadStations();
+    StationFilters.instance.addListener(_onFiltersChanged);
   }
+
+  @override
+  void dispose() {
+    StationFilters.instance.removeListener(_onFiltersChanged);
+    super.dispose();
+  }
+
+  void _onFiltersChanged() => _loadStations();
 
   Future<void> _loadStations() async {
     setState(() => _loading = true);
-    final result = await ApiService.instance.getStations();
+    final filters = StationFilters.instance.toQuery();
+    final result = await ApiService.instance.getStations(
+        filters: filters.isEmpty ? null : filters);
     if (mounted) {
       setState(() {
         _loading  = false;
@@ -45,9 +58,31 @@ class _AllStationsScreenState extends State<AllStationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final activeCount = StationFilters.instance.activeCount;
     return Scaffold(
       backgroundColor: cBg,
-      appBar: kAppBar('All Stations', context),
+      appBar: kAppBar('All Stations', context, actions: [
+        Stack(clipBehavior: Clip.none, children: [
+          IconButton(
+            icon: const Icon(Icons.tune, color: kGreen),
+            tooltip: 'Filters',
+            onPressed: () async {
+              await Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const MapFiltersScreen()));
+              if (mounted) setState(() {});
+            },
+          ),
+          if (activeCount > 0) Positioned(top: 6, right: 4, child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: Colors.redAccent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text('$activeCount',
+                style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+          )),
+        ]),
+      ]),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: kGreen))
           : RefreshIndicator(

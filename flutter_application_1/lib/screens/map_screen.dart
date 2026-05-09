@@ -6,7 +6,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import '../utils/api_service.dart';
 import '../utils/constants.dart' show EVNetwork, kNetworks, networkInfo;
+import '../utils/station_filters.dart';
 import 'booking_form_screen.dart';
+import 'map_filters_screen.dart';
 
 const _kGreen  = Color(0xFF00E5A0);
 const _kBg     = Color(0xFF0A0E1A);
@@ -90,6 +92,7 @@ class _MapScreenState extends State<MapScreen> {
     super.initState();
     _loadStations();
     _loadBookmarks();
+    StationFilters.instance.addListener(_onFiltersChanged);
     // Wait for map to build before moving
     WidgetsBinding.instance.addPostFrameCallback((_) => _getLocation());
   }
@@ -98,11 +101,16 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _searchCtrl.dispose();
     _mapCtrl.dispose();
+    StationFilters.instance.removeListener(_onFiltersChanged);
     super.dispose();
   }
 
+  void _onFiltersChanged() => _loadStations();
+
   Future<void> _loadStations() async {
-    final result = await ApiService.instance.getStations();
+    final filters = StationFilters.instance.toQuery();
+    final result = await ApiService.instance.getStations(
+        filters: filters.isEmpty ? null : filters);
     if (mounted) {
       setState(() {
         _loadingStations = false;
@@ -589,6 +597,31 @@ class _MapScreenState extends State<MapScreen> {
                   border: Border.all(color: _kBorder),
                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10)]),
               child: const Icon(Icons.my_location, color: _kGreen, size: 22)))),
+
+        // ── Advanced filters FAB ─────────────────────────
+        Positioned(bottom: 80, right: 16,
+          child: GestureDetector(
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const MapFiltersScreen())),
+            child: Stack(clipBehavior: Clip.none, children: [
+              Container(width: 52, height: 52,
+                decoration: BoxDecoration(color: _kGreen, borderRadius: BorderRadius.circular(14),
+                    boxShadow: [BoxShadow(color: _kGreen.withOpacity(0.3), blurRadius: 10)]),
+                child: const Icon(Icons.tune, color: Colors.black, size: 22)),
+              if (StationFilters.instance.activeCount > 0)
+                Positioned(top: -4, right: -4, child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent, borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _kBg, width: 2),
+                  ),
+                  child: Text('${StationFilters.instance.activeCount}',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                )),
+            ]),
+          ),
+        ),
       ]),
     );
   }

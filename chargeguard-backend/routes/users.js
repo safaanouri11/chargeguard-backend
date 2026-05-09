@@ -103,6 +103,55 @@ router.get('/stats', protect, async function(req, res) {
     res.status(500).json({ message: err.message });
   }
 });
+// POST /api/users/recent/:stationId — mark a station as recently viewed
+router.post('/recent/:stationId', protect, async function(req, res) {
+  try {
+    var sid = req.params.stationId;
+    // Pull existing entry (so we move it to the front), then push fresh and trim.
+    await User.findByIdAndUpdate(req.user._id, { $pull: { recentlyViewed: { station: sid } } });
+    await User.findByIdAndUpdate(req.user._id, {
+      $push: {
+        recentlyViewed: {
+          $each:     [{ station: sid, viewedAt: new Date() }],
+          $position: 0,
+          $slice:    20,
+        },
+      },
+    });
+    res.json({ message: 'Tracked' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+// GET /api/users/recent — list of recently viewed stations
+router.get('/recent', protect, async function(req, res) {
+  try {
+    var user = await User.findById(req.user._id)
+      .populate({
+        path:   'recentlyViewed.station',
+        select: 'name location power connector price rating available occupancy network status',
+      });
+    var recent = (user.recentlyViewed || [])
+      .filter(function(r) { return r.station; })
+      .map(function(r) {
+        var s = r.station.toObject();
+        s.viewedAt = r.viewedAt;
+        return s;
+      });
+    res.json(recent);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+// DELETE /api/users/recent — clear recently viewed
+router.delete('/recent', protect, async function(req, res) {
+  try {
+    await User.findByIdAndUpdate(req.user._id, { $set: { recentlyViewed: [] } });
+    res.json({ message: 'Cleared' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 // GET /api/users/loyalty
 router.get('/loyalty', protect, async function(req, res) {
   try {

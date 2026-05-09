@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 import '../utils/api_service.dart';
 import 'booking_form_screen.dart';
+import 'charger_detail_screen.dart';
 
 Color _connColor(String? c) {
   switch (c?.toUpperCase()) {
@@ -22,20 +23,26 @@ class BookmarksScreen extends StatefulWidget {
   State<BookmarksScreen> createState() => _BookmarksScreenState();
 }
 
-class _BookmarksScreenState extends State<BookmarksScreen> {
+class _BookmarksScreenState extends State<BookmarksScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabCtrl;
   List<dynamic> _bookmarks = [];
+  List<dynamic> _recent    = [];
   bool _loading = true;
+  bool _loadingRecent = true;
 
   @override
   void initState() {
     super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this);
     _load();
-    // Listen to bookmark changes from map screen
+    _loadRecent();
     UserSession.instance.bookmarkNotifier.addListener(_onBookmarkChange);
   }
 
   @override
   void dispose() {
+    _tabCtrl.dispose();
     UserSession.instance.bookmarkNotifier.removeListener(_onBookmarkChange);
     super.dispose();
   }
@@ -51,6 +58,41 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
         _loading = false;
         _bookmarks = result['success'] ? (result['data'] as List? ?? []) : [];
       });
+    }
+  }
+
+  Future<void> _loadRecent() async {
+    if (!mounted) return;
+    setState(() => _loadingRecent = true);
+    final result = await ApiService.instance.getRecentStations();
+    if (mounted) {
+      setState(() {
+        _loadingRecent = false;
+        _recent = result['success'] ? (result['data'] as List? ?? []) : [];
+      });
+    }
+  }
+
+  Future<void> _clearRecent() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cBg,
+        title: const Text('Clear Recently Viewed?'),
+        content: const Text('This will clear all recently viewed stations.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ApiService.instance.clearRecentStations();
+      _loadRecent();
     }
   }
 
@@ -81,30 +123,57 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
         title: Row(children: [
           const Icon(Icons.bookmark, color: kGreen, size: 22),
           const SizedBox(width: 10),
-          Text('Saved Stations', style: kTitle(18)),
-          const SizedBox(width: 8),
-          if (_bookmarks.isNotEmpty)
-            Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(color: kGreen.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
-              child: Text('${_bookmarks.length}',
-                  style: const TextStyle(color: kGreen, fontSize: 12, fontWeight: FontWeight.w800))),
+          Text('Bookmarks', style: kTitle(18)),
         ]),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh, color: kGreen), onPressed: _load),
-        ]),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: kGreen))
-          : _bookmarks.isEmpty
-              ? _emptyState()
-              : RefreshIndicator(color: kGreen, onRefresh: _load,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(20),
-                    itemCount: _bookmarks.length,
-                    itemBuilder: (_, i) {
-                      final b = _bookmarks[i] as Map<String, dynamic>;
-                      final s = b['station'];
-                      if (s == null) return const SizedBox();
-                      final station   = s as Map<String, dynamic>;
+          IconButton(
+            icon: const Icon(Icons.refresh, color: kGreen),
+            onPressed: () { _load(); _loadRecent(); },
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(52),
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            decoration: BoxDecoration(
+              color: cCard, borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: cBorder),
+            ),
+            child: TabBar(
+              controller: _tabCtrl,
+              indicator: BoxDecoration(color: kGreen, borderRadius: BorderRadius.circular(10)),
+              indicatorSize: TabBarIndicatorSize.tab,
+              labelColor: Colors.black,
+              unselectedLabelColor: cSub,
+              labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              dividerColor: Colors.transparent,
+              tabs: [
+                Tab(text: 'Saved (${_bookmarks.length})'),
+                Tab(text: 'Recently Viewed (${_recent.length})'),
+              ],
+            ),
+          ),
+        ),
+      ),
+      body: TabBarView(controller: _tabCtrl, children: [
+        _buildSavedTab(),
+        _buildRecentTab(),
+      ]),
+    );
+  }
+
+  Widget _buildSavedTab() {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: kGreen));
+    if (_bookmarks.isEmpty) return _emptyState();
+    return RefreshIndicator(color: kGreen, onRefresh: _load,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(20),
+        itemCount: _bookmarks.length,
+        itemBuilder: (_, i) {
+          final b = _bookmarks[i] as Map<String, dynamic>;
+          final s = b['station'];
+          if (s == null) return const SizedBox();
+          final station = s as Map<String, dynamic>;
                       final id        = station['_id'] as String? ?? '';
                       final name      = station['name'] as String? ?? 'Station';
                       final conn      = station['connector'] as String? ?? 'CCS2';
@@ -211,8 +280,112 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                                   isComingSoon ? 'Coming Soon' : (ok ? 'Book Now' : 'Unavailable'),
                                   style: const TextStyle(fontWeight: FontWeight.w800))))),
                         ]));
-                    })),
-    );
+                    }));
+  }
+
+  // ── Recently Viewed Tab ───────────────────────────────────
+  Widget _buildRecentTab() {
+    if (_loadingRecent) return const Center(child: CircularProgressIndicator(color: kGreen));
+    if (_recent.isEmpty) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 90, height: 90,
+          decoration: BoxDecoration(color: kGreen.withOpacity(0.08), shape: BoxShape.circle),
+          child: const Icon(Icons.history, color: kGreen, size: 44)),
+        const SizedBox(height: 20),
+        Text('No recent stations', style: kTitle(20)),
+        const SizedBox(height: 10),
+        Text('Stations you view will appear here',
+            style: kSub(13), textAlign: TextAlign.center),
+      ]));
+    }
+    return RefreshIndicator(color: kGreen, onRefresh: _loadRecent,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(20),
+        itemCount: _recent.length + 1,
+        itemBuilder: (_, i) {
+          if (i == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(children: [
+                Text('${_recent.length} viewed recently', style: kSub(12)),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _clearRecent,
+                  icon: const Icon(Icons.delete_outline, size: 16, color: Colors.redAccent),
+                  label: const Text('Clear All',
+                      style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                ),
+              ]),
+            );
+          }
+          final s = _recent[i - 1] as Map<String, dynamic>;
+          final name = s['name'] as String? ?? 'Station';
+          final conn = s['connector'] as String? ?? 'CCS2';
+          final power = s['power'] as String? ?? '';
+          final price = s['price']?.toString() ?? '';
+          final addr = s['location'] is Map ? s['location']['address'] as String? ?? '' : '';
+          final occ = s['occupancy'] as String? ??
+              ((s['available'] as bool? ?? true) ? 'free' : 'busy');
+          final color = occ == 'busy' ? Colors.redAccent
+              : (occ == 'offline' ? Colors.grey : kGreen);
+          final viewedAt = s['viewedAt'] as String?;
+          final dt = viewedAt != null ? DateTime.tryParse(viewedAt) : null;
+          final relative = dt == null ? '' : _relative(dt);
+          return GestureDetector(
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => ChargerDetailScreen(s))),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: kCardDeco(),
+              child: Row(children: [
+                Container(width: 44, height: 44,
+                  decoration: BoxDecoration(
+                      color: color.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Icon(Icons.ev_station, color: color, size: 22)),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(name, style: kTitle(13)),
+                  if (addr.isNotEmpty) Text(addr,
+                      style: kSub(11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(spacing: 8, children: [
+                      _miniTag(conn, color),
+                      if (power.isNotEmpty) _miniTag(power, cSub2),
+                      if (price.isNotEmpty) _miniTag('$price NIS', cSub2),
+                    ]),
+                  ),
+                ])),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Icon(Icons.chevron_right, color: cSub2, size: 18),
+                  if (relative.isNotEmpty) Text(relative,
+                      style: TextStyle(color: cSub2, fontSize: 10)),
+                ]),
+              ]),
+            ),
+          );
+        }));
+  }
+
+  Widget _miniTag(String text, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(text, style: TextStyle(
+        color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+  );
+
+  String _relative(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1)  return 'now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24)   return '${diff.inHours}h';
+    if (diff.inDays < 7)     return '${diff.inDays}d';
+    return '${dt.day}/${dt.month}';
   }
 
   Widget _emptyState() => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
