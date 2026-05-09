@@ -438,12 +438,24 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
     final priceCtrl = TextEditingController(text: s['price']?.toString() ?? '2.5');
     String power    = s['power'] as String? ?? '22 kW';
     String conn     = s['connector'] as String? ?? 'CCS2';
+    String network  = s['network'] as String? ?? 'Independent';
+    int    plugs    = (s['plugCount'] as num?)?.toInt() ?? 1;
+    final amenities = ((s['amenities'] as List?) ?? []).map((e) => e.toString()).toSet();
+    final parking   = ((s['parking']   as List?) ?? []).map((e) => e.toString()).toSet();
     bool   saving   = false;
 
-    final powers = ['22 kW', '50 kW', 'AC', '7 kW'];
-    final conns  = ['CCS2', 'Type 2', 'CHAdeMO', 'GB/T'];
-    if (!powers.contains(power)) power = '22 kW';
-    if (!conns.contains(conn))   conn  = 'CCS2';
+    const powers = ['7 kW', '11 kW', '22 kW', '43 kW', '50 kW',
+                    '100 kW', '150 kW', '250 kW', '350 kW', 'AC'];
+    const conns  = ['CCS2', 'CCS1', 'CHAdeMO', 'Type 2', 'NACS', 'GB/T', 'AC', 'J-1772'];
+    const networks = ['Independent', 'ChargePoint', 'EVgo', 'Tesla',
+                      'Electrify America', 'Shell Recharge', 'BP Pulse', 'Other'];
+    const amenList = ['WiFi', 'Dining', 'Restroom', 'Shopping', 'Lodging', 'Park',
+                      'Grocery', 'Valet', 'Hiking', 'Camping', 'Free Charge'];
+    const parkList = ['Accessible', 'Covered', 'Garage', 'Illuminated',
+                      'Pull In', 'Pull Through', 'Trailer Friendly'];
+    if (!powers.contains(power))     power   = '22 kW';
+    if (!conns.contains(conn))       conn    = 'CCS2';
+    if (!networks.contains(network)) network = 'Independent';
 
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: cCard,
@@ -452,7 +464,8 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
         builder: (ctx, set) => Padding(
           padding: EdgeInsets.only(left: 24, right: 24, top: 24,
               bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 36, height: 4,
                 decoration: BoxDecoration(color: cBorder, borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 20),
@@ -469,6 +482,66 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
               const SizedBox(width: 12),
               Expanded(child: _dropdown('Connector', conn, conns, (v) => set(() => conn = v!))),
             ]),
+            const SizedBox(height: 12),
+            _dropdown('Network', network, networks, (v) => set(() => network = v!)),
+            const SizedBox(height: 12),
+            // Plug count stepper
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(color: cBg, borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: cBorder)),
+              child: Row(children: [
+                Text('Plug Count', style: kSub(12)),
+                const Spacer(),
+                IconButton(icon: const Icon(Icons.remove, color: kGreen),
+                    onPressed: () => set(() { if (plugs > 1) plugs--; })),
+                Text('$plugs', style: kTitle(15)),
+                IconButton(icon: const Icon(Icons.add, color: kGreen),
+                    onPressed: () => set(() { if (plugs < 20) plugs++; })),
+              ]),
+            ),
+            const SizedBox(height: 16),
+            Align(alignment: Alignment.centerLeft,
+                child: Text('Amenities', style: kTitle(13))),
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 6, children: amenList.map((a) {
+              final sel = amenities.contains(a);
+              return GestureDetector(
+                onTap: () => set(() { sel ? amenities.remove(a) : amenities.add(a); }),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: sel ? Colors.purpleAccent.withOpacity(0.15) : cBg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: sel ? Colors.purpleAccent : cBorder),
+                  ),
+                  child: Text(a, style: TextStyle(
+                      color: sel ? Colors.purpleAccent : cSub,
+                      fontSize: 11, fontWeight: FontWeight.w700)),
+                ),
+              );
+            }).toList()),
+            const SizedBox(height: 14),
+            Align(alignment: Alignment.centerLeft,
+                child: Text('Parking', style: kTitle(13))),
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 6, children: parkList.map((p) {
+              final sel = parking.contains(p);
+              return GestureDetector(
+                onTap: () => set(() { sel ? parking.remove(p) : parking.add(p); }),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: sel ? Colors.orange.withOpacity(0.15) : cBg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: sel ? Colors.orange : cBorder),
+                  ),
+                  child: Text(p, style: TextStyle(
+                      color: sel ? Colors.orange : cSub,
+                      fontSize: 11, fontWeight: FontWeight.w700)),
+                ),
+              );
+            }).toList()),
             const SizedBox(height: 20),
             SizedBox(width: double.infinity, height: 52,
               child: ElevatedButton(
@@ -479,6 +552,10 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
                     'address':   addrCtrl.text.trim(),
                     'power':     power,
                     'connector': conn,
+                    'network':   network,
+                    'plugCount': plugs,
+                    'amenities': amenities.toList(),
+                    'parking':   parking.toList(),
                     'price':     double.tryParse(priceCtrl.text) ?? 2.5,
                   });
                   if (mounted) {
@@ -495,7 +572,7 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
                     ? const SizedBox(width: 22, height: 22,
                         child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2.5))
                     : const Text('Save Changes', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)))),
-          ]))));
+          ])))));
   }
 
   // ── Add Station Sheet ─────────────────────────────────────
