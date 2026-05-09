@@ -61,7 +61,9 @@ router.post('/stations', protect, hostApproved, async function(req, res) {
       connector: req.body.connector,
       price:     req.body.price,
       status:    req.body.status || 'Active',
-      network:   req.user.businessName || 'Independent', // ﺗﻠﻘﺎﺋﻲ ﻣﻦ اﻟﮭﻮﺳﺖ
+      // Prefer the network the host explicitly chose; fall back to their
+      // business name, then to 'Independent'.
+      network:   req.body.network || req.user.businessName || 'Independent',
       amenities: req.body.amenities || [],
       parking:   req.body.parking   || [],
       plugCount: req.body.plugCount  || 1,
@@ -77,10 +79,19 @@ router.post('/stations', protect, hostApproved, async function(req, res) {
 // PUT /api/host/stations/:id
 router.put('/stations/:id', protect, hostApproved, async function(req, res) {
   try {
+    var update = {
+      name: req.body.name, power: req.body.power, connector: req.body.connector,
+      price: req.body.price, 'location.address': req.body.address,
+    };
+    if (req.body.network    !== undefined) update.network    = req.body.network;
+    if (req.body.plugCount  !== undefined) update.plugCount  = req.body.plugCount;
+    if (req.body.amenities  !== undefined) update.amenities  = req.body.amenities;
+    if (req.body.parking    !== undefined) update.parking    = req.body.parking;
+    if (req.body.vehicles   !== undefined) update.vehicles   = req.body.vehicles;
+    if (req.body.status     !== undefined) update.status     = req.body.status;
     var station = await Station.findOneAndUpdate(
       { _id: req.params.id, host: req.user._id },
-      { name: req.body.name, power: req.body.power, connector: req.body.connector,
-        price: req.body.price, 'location.address': req.body.address },
+      update,
       { new: true }
     );
     if (!station) return res.status(404).json({ message: 'Not found' });
