@@ -11,6 +11,7 @@ import 'help_support_screen.dart';
 import 'payment_methods_screen.dart';
 import 'camera_screen.dart';
 import 'referrals_screen.dart';
+import 'loyalty_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -458,6 +459,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => goTo(context, OffersScreen())),
             _menu(Icons.card_giftcard_outlined, 'Invite Friends',  'Earn 10 NIS per referral',
                 onTap: () => goTo(context, const ReferralsScreen())),
+            _menu(Icons.workspace_premium_outlined, 'Loyalty Program', 'Tier, points & rewards',
+                onTap: () => goTo(context, const LoyaltyScreen())),
             _menu(Icons.credit_card_outlined, 'Payment Methods',  'Manage your cards',
                 onTap: () => goTo(context, const PaymentMethodsScreen())),
             _menu(Icons.help_outline,         'Help & Support',   'FAQ & contact us',

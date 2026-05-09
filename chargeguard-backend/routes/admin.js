@@ -5,6 +5,7 @@ const Booking     = require('../models/Booking');
 const Transaction = require('../models/Transaction');
 const Payout      = require('../models/Payout');
 const Ticket      = require('../models/Ticket');
+const PromoCode   = require('../models/PromoCode');
 const protect     = require('../middleware/protect');
 const notify      = require('../utils/notify');
 const router = express.Router();
@@ -234,6 +235,50 @@ router.put('/tickets/:id/resolve', protect, adminOnly, async function(req, res) 
       { status: 'Resolved' }, { new: true });
     if (!ticket) return res.status(404).json({ message: 'Not found' });
     res.json({ message: 'Ticket resolved', ticket });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+// ── Promo Codes (admin) ───────────────────────────────────
+router.get('/promos', protect, adminOnly, async function(req, res) {
+  try {
+    var promos = await PromoCode.find().sort({ createdAt: -1 });
+    res.json(promos);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+router.post('/promos', protect, adminOnly, async function(req, res) {
+  try {
+    var promo = await PromoCode.create({
+      code:        (req.body.code || '').toUpperCase().trim(),
+      description: req.body.description || '',
+      type:        req.body.type || 'percentage',
+      value:       req.body.value,
+      active:      req.body.active !== false,
+      expiresAt:   req.body.expiresAt || null,
+      maxUses:     req.body.maxUses || 0,
+      minBookingAmount: req.body.minBookingAmount || 0,
+    });
+    res.status(201).json(promo);
+  } catch (err) {
+    if (err.code === 11000) return res.status(400).json({ message: 'Code already exists' });
+    res.status(500).json({ message: err.message });
+  }
+});
+router.put('/promos/:id', protect, adminOnly, async function(req, res) {
+  try {
+    var promo = await PromoCode.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!promo) return res.status(404).json({ message: 'Not found' });
+    res.json(promo);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+router.delete('/promos/:id', protect, adminOnly, async function(req, res) {
+  try {
+    await PromoCode.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Promo deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
