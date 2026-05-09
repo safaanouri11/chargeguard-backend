@@ -13,6 +13,40 @@ class BookingFormScreen extends StatefulWidget {
 class _BookingFormScreenState extends State<BookingFormScreen> {
   DateTime? _selectedDateTime;
   bool      _loading = false;
+  final _promoCtrl = TextEditingController();
+  bool _validatingPromo = false;
+  Map<String, dynamic>? _appliedPromo; // {code, discount, finalAmount, ...}
+  String? _promoError;
+
+  @override
+  void dispose() {
+    _promoCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _applyPromo() async {
+    final code = _promoCtrl.text.trim();
+    if (code.isEmpty) return;
+    setState(() { _validatingPromo = true; _promoError = null; });
+    final res = await ApiService.instance.validatePromo(code, amount: 5);
+    if (!mounted) return;
+    setState(() {
+      _validatingPromo = false;
+      if (res['success']) {
+        _appliedPromo = res['data'] as Map<String, dynamic>;
+      } else {
+        _promoError = res['message'] as String? ?? 'Invalid code';
+      }
+    });
+  }
+
+  void _removePromo() {
+    setState(() {
+      _appliedPromo = null;
+      _promoCtrl.clear();
+      _promoError = null;
+    });
+  }
 
   // ── Pick Date & Time ──────────────────────────────────────
   Future<void> _pickDateTime() async {
@@ -85,15 +119,18 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       stationId: stationId,
       date:      _formattedDate,
       time:      _formattedTime,
+      promoCode: _appliedPromo?['code'] as String?,
     );
 
     if (!mounted) return;
     setState(() => _loading = false);
 
     if (result['success']) {
-      // Update balance locally
-      final newBalance = UserSession.instance.balance - 5;
-      UserSession.instance.updateBalance(newBalance);
+      // Update balance locally — use the actual final amount paid
+      final paid = (_appliedPromo != null
+          ? (_appliedPromo!['finalAmount'] as num?)?.toDouble()
+          : null) ?? 5.0;
+      UserSession.instance.updateBalance(UserSession.instance.balance - paid);
 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Row(children: [
@@ -222,27 +259,101 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
           ]),
           const SizedBox(height: 24),
 
+          // Promo code
+          Text('Promo Code', style: kTitle(15)),
+          const SizedBox(height: 8),
+          if (_appliedPromo == null) ...[
+            Row(children: [
+              Expanded(child: TextField(
+                controller: _promoCtrl,
+                textCapitalization: TextCapitalization.characters,
+                decoration: InputDecoration(
+                  hintText: 'Enter code',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+              )),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: _validatingPromo ? null : _applyPromo,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kGreen, foregroundColor: Colors.black,
+                  minimumSize: const Size(80, 48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _validatingPromo
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                  : const Text('Apply', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ]),
+            if (_promoError != null) Padding(
+              padding: const EdgeInsets.only(top: 6, left: 4),
+              child: Text(_promoError!,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+            ),
+          ] else
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: kGreen.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: kGreen.withOpacity(0.4)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.check_circle, color: kGreen, size: 22),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${_appliedPromo!['code']} applied',
+                      style: const TextStyle(color: kGreen, fontWeight: FontWeight.w800)),
+                  Text(
+                    'Saved ${(_appliedPromo!['discount'] as num).toStringAsFixed(2)} NIS',
+                    style: kSub(12),
+                  ),
+                ])),
+                IconButton(
+                  icon: const Icon(Icons.close, color: kGreen),
+                  onPressed: _removePromo,
+                ),
+              ]),
+            ),
+          const SizedBox(height: 24),
+
           // Summary
           if (_selectedDateTime != null) ...[
-            Container(padding: const EdgeInsets.all(16), decoration: kCardDeco(),
-              child: Column(children: [
-                _row('Station',    stName),
-                _row('Date',       _formattedDate),
-                _row('Time',       _formattedTime),
-                _row('Price',      '$price NIS/kWh'),
-                _row('Connector',  conn),
-                _row('Booking Fee','5 NIS (from wallet)'),
-                Divider(color: cBorder, height: 16),
-                _row('Balance After',
-                    'NIS ${(balance - 5).toStringAsFixed(2)}',
-                    valueColor: balance < 5 ? kRed : kGreen),
-              ])),
+            Builder(builder: (_) {
+              final fee = 5.0;
+              final discount = (_appliedPromo?['discount'] as num?)?.toDouble() ?? 0;
+              final finalFee = (_appliedPromo?['finalAmount'] as num?)?.toDouble() ?? fee;
+              return Container(padding: const EdgeInsets.all(16), decoration: kCardDeco(),
+                child: Column(children: [
+                  _row('Station',    stName),
+                  _row('Date',       _formattedDate),
+                  _row('Time',       _formattedTime),
+                  _row('Price',      '$price NIS/kWh'),
+                  _row('Connector',  conn),
+                  _row('Booking Fee','${fee.toStringAsFixed(2)} NIS'),
+                  if (_appliedPromo != null)
+                    _row('Promo (${_appliedPromo!['code']})',
+                         '-${discount.toStringAsFixed(2)} NIS',
+                         valueColor: kGreen),
+                  Divider(color: cBorder, height: 16),
+                  _row('Total',
+                      '${finalFee.toStringAsFixed(2)} NIS',
+                      valueColor: kGreen),
+                  _row('Balance After',
+                      'NIS ${(balance - finalFee).toStringAsFixed(2)}',
+                      valueColor: balance < finalFee ? kRed : kGreen),
+                ]));
+            }),
             const SizedBox(height: 28),
           ],
 
-          SizedBox(width: double.infinity, height: 54,
+          Builder(builder: (_) {
+            final required = (_appliedPromo?['finalAmount'] as num?)?.toDouble() ?? 5.0;
+            return SizedBox(width: double.infinity, height: 54,
             child: ElevatedButton(
-              onPressed: (_loading || balance < 5 || _selectedDateTime == null) ? null : _confirm,
+              onPressed: (_loading || balance < required || _selectedDateTime == null) ? null : _confirm,
               style: ElevatedButton.styleFrom(
                 backgroundColor: kGreen,
                 disabledBackgroundColor: kGreen.withOpacity(0.2),
@@ -253,7 +364,8 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
                       child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2.5))
                   : Text(
                       _selectedDateTime == null ? 'Select Date & Time First' : 'Confirm Booking',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)))),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))));
+          }),
         ]),
       ),
     );

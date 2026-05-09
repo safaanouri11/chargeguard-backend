@@ -8,7 +8,11 @@
 
 const Anthropic = require('@anthropic-ai/sdk');
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-7';
+// Default to Haiku 4.5 — fast, cheap, and good enough for these short tasks.
+// Override via ANTHROPIC_MODEL env var (e.g. claude-opus-4-7 for max quality).
+// Pricing: $1/$5 per 1M tokens (haiku) vs $5/$25 (opus). New Anthropic
+// accounts get ~$5 in free credits which is plenty for a student project.
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5';
 
 const SYSTEM_RECOMMEND =
   'You are ChargeGuard\'s AI assistant helping electric vehicle drivers in ' +
@@ -77,9 +81,7 @@ async function recommendStation(user, stations) {
     var msg = await c.messages.create({
       model: MODEL,
       max_tokens: 400,
-      thinking: { type: 'adaptive' },
       output_config: {
-        effort: 'low',
         format: {
           type: 'json_schema',
           schema: {
@@ -119,8 +121,6 @@ async function summarizeRoute(payload) {
     var msg = await c.messages.create({
       model: MODEL,
       max_tokens: 200,
-      thinking: { type: 'adaptive' },
-      output_config: { effort: 'low' },
       system: SYSTEM_ROUTE,
       messages: [{
         role: 'user',

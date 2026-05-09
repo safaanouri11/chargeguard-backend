@@ -309,12 +309,17 @@ class ApiService {
     required String stationId,
     required String date,
     required String time,
+    String? promoCode,
   }) async {
     try {
+      final body = <String, dynamic>{
+        'stationId': stationId, 'date': date, 'time': time,
+      };
+      if (promoCode != null && promoCode.isNotEmpty) body['promoCode'] = promoCode;
       final res = await http.post(
         Uri.parse('$baseUrl/bookings'),
         headers: _headers,
-        body: jsonEncode({'stationId': stationId, 'date': date, 'time': time}),
+        body: jsonEncode(body),
       );
       return await _handleResponse(res);
     } catch (e) {
@@ -813,6 +818,48 @@ class ApiService {
   Future<Map<String, dynamic>> getStats() async {
     try {
       final res = await http.get(Uri.parse('$baseUrl/users/stats'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  // ── Loyalty / CO2 ─────────────────────────────────────────
+  Future<Map<String, dynamic>> getLoyalty() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/users/loyalty'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getCO2() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/users/co2'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  // ── Promo Codes ───────────────────────────────────────────
+  Future<Map<String, dynamic>> validatePromo(String code, {double amount = 5}) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/promos/validate'),
+        headers: _headers,
+        body: jsonEncode({'code': code, 'amount': amount}),
+      );
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getActivePromos() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/promos/list'), headers: _headers);
       return await _handleResponse(res);
     } catch (e) {
       return {'success': false, 'message': 'Connection error'};

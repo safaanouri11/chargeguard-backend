@@ -22,6 +22,7 @@ app.use('/api/ai',       require('./routes/ai'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/reviews',  require('./routes/reviews'));
 app.use('/api/referrals', require('./routes/referrals'));
+app.use('/api/promos',   require('./routes/promos'));
 // ── Health Check ──────────────────────────────────────────
 app.get('/', function(req, res) {
   res.json({ message: 'ChargeGuard API is running!', status: 'ok' });
