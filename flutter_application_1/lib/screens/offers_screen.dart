@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../utils/constants.dart';
 import '../utils/api_service.dart';
 
@@ -13,6 +14,7 @@ class _OffersScreenState extends State<OffersScreen>
   late TabController _tabCtrl;
   List<dynamic> _offers  = [];
   List<String>  _claimed = [];
+  List<dynamic> _promoCodes = [];
   bool _loading = true;
 
   @override
@@ -33,6 +35,7 @@ class _OffersScreenState extends State<OffersScreen>
     final results = await Future.wait([
       ApiService.instance.getOffers(),
       ApiService.instance.getMyClaims(),
+      ApiService.instance.getActivePromos(),
     ]);
     if (mounted) {
       setState(() {
@@ -41,8 +44,99 @@ class _OffersScreenState extends State<OffersScreen>
         _claimed = results[1]['success']
             ? List<String>.from(results[1]['data'] as List)
             : [];
+        _promoCodes = results[2]['success'] ? (results[2]['data'] as List) : [];
       });
     }
+  }
+
+  void _copyCode(String code) {
+    Clipboard.setData(ClipboardData(text: code));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('$code copied — paste at checkout'),
+      backgroundColor: kGreen,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
+  Widget _promoCodesSection() {
+    if (_promoCodes.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [kGreen.withOpacity(0.18), Colors.purpleAccent.withOpacity(0.06)],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kGreen.withOpacity(0.3)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.qr_code_2, color: kGreen, size: 18),
+          const SizedBox(width: 6),
+          Text('Promo Codes', style: kTitle(13)),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: kGreen, borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text('${_promoCodes.length}',
+                style: const TextStyle(
+                    color: Colors.black, fontSize: 10, fontWeight: FontWeight.w800)),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        Text('Tap to copy — apply at booking checkout', style: kSub(11)),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 70,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _promoCodes.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final p = _promoCodes[i] as Map<String, dynamic>;
+              final code = p['code'] as String? ?? '';
+              final type = p['type'] as String? ?? 'percentage';
+              final value = (p['value'] as num?)?.toDouble() ?? 0;
+              final label = type == 'percentage'
+                  ? '${value.toStringAsFixed(0)}% off'
+                  : '${value.toStringAsFixed(0)} NIS off';
+              return GestureDetector(
+                onTap: () => _copyCode(code),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: cBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: kGreen.withOpacity(0.5), width: 1.2),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Text(code,
+                            style: const TextStyle(
+                                color: kGreen, fontSize: 13,
+                                fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+                        const SizedBox(width: 6),
+                        Icon(Icons.copy, color: cSub2, size: 12),
+                      ]),
+                      const SizedBox(height: 3),
+                      Text(label, style: kSub(10)),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ]),
+    );
   }
 
   Future<void> _loadOffers() => _loadAll();
@@ -90,7 +184,7 @@ class _OffersScreenState extends State<OffersScreen>
 
   // ── Promos Tab ────────────────────────────────────────────
   Widget _buildPromos() {
-    if (_promos.isEmpty) {
+    if (_promos.isEmpty && _promoCodes.isEmpty) {
       return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.local_offer_outlined, color: cSub2, size: 48),
         const SizedBox(height: 12),
@@ -99,10 +193,12 @@ class _OffersScreenState extends State<OffersScreen>
     }
     return RefreshIndicator(
       color: kGreen, onRefresh: _loadOffers,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(20),
-        itemCount: _promos.length,
-        itemBuilder: (_, i) {
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          _promoCodesSection(),
+          const SizedBox(height: 8),
+          ...List.generate(_promos.length, (i) {
           final promo = Map<String, dynamic>.from(_promos[i]);
           final id    = promo['_id']?.toString() ?? '';
           return _PromoCard(
@@ -125,7 +221,10 @@ class _OffersScreenState extends State<OffersScreen>
                 }
               }
             });
-        }));
+        }),
+        ],
+      ),
+    );
   }
 
   // ── Loyalty Tab ───────────────────────────────────────────
