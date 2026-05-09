@@ -231,10 +231,52 @@ class ApiService {
   //  STATIONS
   // ════════════════════════════════════════
 
-  // Get all stations
-  Future<Map<String, dynamic>> getStations() async {
+  // Get all stations (optionally with rich filters)
+  Future<Map<String, dynamic>> getStations({Map<String, String>? filters}) async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/stations'), headers: _headers);
+      final uri = (filters == null || filters.isEmpty)
+          ? Uri.parse('$baseUrl/stations')
+          : Uri.parse('$baseUrl/stations').replace(queryParameters: filters);
+      final res = await http.get(uri, headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  // Get station filter options (distinct values present in DB)
+  Future<Map<String, dynamic>> getStationFilters() async {
+    try {
+      final res = await http.get(
+          Uri.parse('$baseUrl/stations/filters'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  // Recently viewed stations
+  Future<void> trackStationView(String stationId) async {
+    try {
+      await http.post(
+          Uri.parse('$baseUrl/users/recent/$stationId'), headers: _headers);
+    } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>> getRecentStations() async {
+    try {
+      final res = await http.get(
+          Uri.parse('$baseUrl/users/recent'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> clearRecentStations() async {
+    try {
+      final res = await http.delete(
+          Uri.parse('$baseUrl/users/recent'), headers: _headers);
       return await _handleResponse(res);
     } catch (e) {
       return {'success': false, 'message': 'Connection error'};
@@ -258,6 +300,7 @@ class ApiService {
     double radius = 10,
     String? connector,
     bool onlyAvailable = false,
+    Map<String, String>? filters,
   }) async {
     try {
       final params = <String, String>{
@@ -267,6 +310,7 @@ class ApiService {
       };
       if (connector != null && connector.isNotEmpty) params['connector'] = connector;
       if (onlyAvailable) params['onlyAvailable'] = 'true';
+      if (filters != null) params.addAll(filters);
       final uri = Uri.parse('$baseUrl/stations/nearby').replace(queryParameters: params);
       final res = await http.get(uri, headers: _headers);
       return await _handleResponse(res);
