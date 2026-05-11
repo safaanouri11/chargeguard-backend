@@ -19,10 +19,13 @@ class _HostAddChargerScreenState extends State<HostAddChargerScreen> {
   String _power    = '22 kW';
   String _conn     = 'CCS2';
   String _status   = 'Active';
+  String _network  = 'Independent';
   int    _plugCount = 1;
+  double _ratingFloor = 5.0; // initial rating set by host (will be averaged once reviews come in)
   bool   _saving   = false;
   bool   _loadingAddr = false;
 
+  Set<String> _connectors = {'CCS2'}; // multi-select; primary stored as `connector`
   Set<String> _amenities = {};
   Set<String> _parking   = {};
   Set<String> _vehicles  = {};
@@ -36,6 +39,11 @@ class _HostAddChargerScreenState extends State<HostAddChargerScreen> {
   static const _parkList   = ['Accessible', 'Covered', 'Garage', 'Illuminated',
                                'Pull In', 'Pull Through', 'Trailer Friendly'];
   static const _vehicleList = ['Car', 'Truck', 'Motorcycle', 'RV', 'Bicycle'];
+  static const _connList   = ['CCS2', 'CCS1', 'CHAdeMO', 'Type 2', 'NACS', 'GB/T', 'AC', 'J-1772'];
+  static const _powerList  = ['7 kW', '11 kW', '22 kW', '43 kW', '50 kW',
+                               '100 kW', '150 kW', '250 kW', '350 kW', 'AC'];
+  static const _networkList = ['Independent', 'ChargePoint', 'EVgo', 'Tesla',
+                                'Electrify America', 'Shell Recharge', 'BP Pulse', 'Other'];
 
   static const Map<String, IconData> _amenIcons = {
     'WiFi': Icons.wifi, 'Dining': Icons.restaurant, 'Restroom': Icons.wc,
@@ -83,14 +91,20 @@ class _HostAddChargerScreenState extends State<HostAddChargerScreen> {
     if (_addrCtrl.text.trim().isEmpty) { _snack('Please enter address', isError: true); return; }
 
     setState(() => _saving = true);
+    // Primary connector is the one shown in the dropdown; if the host selected
+    // multiple via the chips, append the rest into the vehicles slot for display
+    // and keep the primary on the canonical `connector` field.
+    final selectedConns = _connectors.isEmpty ? [_conn] : _connectors.toList();
+    final primaryConn = selectedConns.contains(_conn) ? _conn : selectedConns.first;
     final res = await ApiService.instance.addHostStation({
       'name':      _nameCtrl.text.trim(),
       'location':  { 'address': _addrCtrl.text.trim(), 'lat': _selected.latitude, 'lng': _selected.longitude },
       'power':     _power,
-      'connector': _conn,
+      'connector': primaryConn,
       'price':     double.tryParse(_priceCtrl.text) ?? 2.5,
       'status':    _status,
       'plugCount': _plugCount,
+      'network':   _network,
       'amenities': _amenities.toList(),
       'parking':   _parking.toList(),
       'vehicles':  _vehicles.toList(),
@@ -192,13 +206,21 @@ class _HostAddChargerScreenState extends State<HostAddChargerScreen> {
         const SizedBox(height: 12),
 
         Row(children: [
-          Expanded(child: _dropdown('Power', _power, ['7 kW', '22 kW', '50 kW', 'AC'], (v) => setState(() => _power = v!))),
+          Expanded(child: _dropdown('Power', _power, _powerList, (v) => setState(() => _power = v!))),
           const SizedBox(width: 12),
-          Expanded(child: _dropdown('Connector', _conn, ['CCS2', 'Type 2', 'CHAdeMO', 'GB/T', 'NACS', 'AC'], (v) => setState(() => _conn = v!))),
+          Expanded(child: _dropdown('Primary Connector', _conn, _connList,
+              (v) => setState(() {
+                _conn = v!;
+                _connectors.add(v);
+              }))),
         ]),
         const SizedBox(height: 12),
 
         _field(_priceCtrl, 'Price NIS/kWh', Icons.attach_money, type: TextInputType.number),
+        const SizedBox(height: 12),
+
+        // Network
+        _dropdown('Network', _network, _networkList, (v) => setState(() => _network = v!)),
         const SizedBox(height: 12),
 
         // Status + Plug Count
@@ -234,6 +256,27 @@ class _HostAddChargerScreenState extends State<HostAddChargerScreen> {
                   style: kSub(11))),
             ])),
         ],
+        const SizedBox(height: 24),
+
+        // ── Supported Connectors ──────────────────────────
+        Text('🔌 All Supported Connectors', style: kTitle(16)),
+        const SizedBox(height: 4),
+        Text('Pick every connector type your station offers',
+            style: kSub(12)),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: _connList.map((c) {
+          final sel = _connectors.contains(c);
+          return GestureDetector(
+            onTap: () => setState(() {
+              if (sel) {
+                _connectors.remove(c);
+                if (_conn == c && _connectors.isNotEmpty) _conn = _connectors.first;
+              } else {
+                _connectors.add(c);
+              }
+            }),
+            child: _chip(Icons.power, c, sel, kGreen));
+        }).toList()),
         const SizedBox(height: 24),
 
         // ── Compatible Vehicles ───────────────────────────

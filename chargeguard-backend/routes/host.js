@@ -53,6 +53,10 @@ router.get('/stations', protect, hostApproved, async function(req, res) {
 // POST /api/host/stations
 router.post('/stations', protect, hostApproved, async function(req, res) {
   try {
+    var resolvedNetwork = req.body.network || req.user.businessName || 'Independent';
+    console.log('Host station create — body.network=' + req.body.network +
+                ', businessName=' + req.user.businessName +
+                ', resolved=' + resolvedNetwork);
     var station = await Station.create({
       host:      req.user._id,
       name:      req.body.name,
@@ -61,14 +65,15 @@ router.post('/stations', protect, hostApproved, async function(req, res) {
       connector: req.body.connector,
       price:     req.body.price,
       status:    req.body.status || 'Active',
-      network:   req.user.businessName || 'Independent', // ﺗﻠﻘﺎﺋﻲ ﻣﻦ اﻟﮭﻮﺳﺖ
+      network:   resolvedNetwork,
       amenities: req.body.amenities || [],
       parking:   req.body.parking   || [],
       plugCount: req.body.plugCount  || 1,
       vehicles:  req.body.vehicles  || [],
       available: req.body.status === 'Coming Soon' ? false : true,
     });
-    console.log('New station added: ' + station.name + ' by ' + req.user.email);
+    console.log('New station added: ' + station.name + ' by ' + req.user.email +
+                ' (network=' + station.network + ')');
     res.status(201).json(station);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -77,13 +82,44 @@ router.post('/stations', protect, hostApproved, async function(req, res) {
 // PUT /api/host/stations/:id
 router.put('/stations/:id', protect, hostApproved, async function(req, res) {
   try {
+    var update = {
+      name: req.body.name, power: req.body.power, connector: req.body.connector,
+      price: req.body.price, 'location.address': req.body.address,
+    };
+    if (req.body.network    !== undefined) update.network    = req.body.network;
+    if (req.body.plugCount  !== undefined) update.plugCount  = req.body.plugCount;
+    if (req.body.amenities  !== undefined) update.amenities  = req.body.amenities;
+    if (req.body.parking    !== undefined) update.parking    = req.body.parking;
+    if (req.body.vehicles   !== undefined) update.vehicles   = req.body.vehicles;
+    if (req.body.status     !== undefined) update.status     = req.body.status;
+    console.log('Host station update — id=' + req.params.id +
+                ', network=' + req.body.network);
     var station = await Station.findOneAndUpdate(
       { _id: req.params.id, host: req.user._id },
-      { name: req.body.name, power: req.body.power, connector: req.body.connector,
-        price: req.body.price, 'location.address': req.body.address },
+      update,
       { new: true }
     );
     if (!station) return res.status(404).json({ message: 'Not found' });
+    res.json(station);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+// PUT /api/host/stations/:id/network — quick-fix endpoint for changing
+// just the network on an existing station. Useful to fix legacy entries
+// that were created before /api/host/stations honored req.body.network.
+router.put('/stations/:id/network', protect, hostApproved, async function(req, res) {
+  try {
+    if (!req.body.network) {
+      return res.status(400).json({ message: 'network is required' });
+    }
+    var station = await Station.findOneAndUpdate(
+      { _id: req.params.id, host: req.user._id },
+      { network: req.body.network },
+      { new: true }
+    );
+    if (!station) return res.status(404).json({ message: 'Not found' });
+    console.log('Network changed for ' + station.name + ' → ' + station.network);
     res.json(station);
   } catch (err) {
     res.status(500).json({ message: err.message });
