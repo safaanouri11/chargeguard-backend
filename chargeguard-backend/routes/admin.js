@@ -179,6 +179,23 @@ router.delete('/stations/:id', protect, adminOnly, async function(req, res) {
     res.status(500).json({ message: err.message });
   }
 });
+// PUT /api/admin/stations/:id — admin can update any station field
+// (used to fix legacy entries — e.g. Tesla stations stuck on Independent).
+router.put('/stations/:id', protect, adminOnly, async function(req, res) {
+  try {
+    var update = {};
+    var allowed = ['network', 'name', 'power', 'connector', 'price',
+                   'status', 'plugCount', 'amenities', 'parking', 'vehicles'];
+    allowed.forEach(function(k) {
+      if (req.body[k] !== undefined) update[k] = req.body[k];
+    });
+    var station = await Station.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!station) return res.status(404).json({ message: 'Not found' });
+    res.json(station);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 // ── Payout Approvals ──────────────────────────────────────
 router.get('/payouts', protect, adminOnly, async function(req, res) {
   try {
