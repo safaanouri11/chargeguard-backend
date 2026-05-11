@@ -17,6 +17,7 @@ dependencies:
   geolocator: ^14.0.2
   http: ^1.2.2
   image_picker: ^1.1.2
+  shared_preferences: ^2.3.2
 
   # 👇 أضفنا مكتبة الفيديو
   video_player: ^2.8.1

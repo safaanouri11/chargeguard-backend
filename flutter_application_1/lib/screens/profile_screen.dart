@@ -1,6 +1,8 @@
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'dart:convert';
+import 'dart:io' show File;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../utils/constants.dart';
 import '../utils/app_settings.dart';
 import '../utils/api_service.dart';
@@ -55,27 +57,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // ── Pick Photo ────────────────────────────────────────────
-  void _pickImage(String source) {
-    final input = html.FileUploadInputElement();
-    input.accept   = 'image/*';
-    input.multiple = false;
-    if (source == 'camera') input.setAttribute('capture', 'user');
-    input.click();
-    input.onChange.listen((event) {
-      final file = input.files?.first;
-      if (file == null) return;
-      final reader = html.FileReader();
-      reader.readAsDataUrl(file);
-      reader.onLoad.listen((_) async {
-        final base64 = reader.result as String;
-        setState(() => _imageBase64 = base64);
-        // Save to backend
-        await ApiService.instance.updateProfile({'avatar': base64});
-        if (mounted) Navigator.pop(context);
-        _snack('Photo updated! ✅');
-      });
-    });
+  // ── Pick Photo (cross-platform via image_picker) ─────────
+  Future<void> _pickImage(String source) async {
+    final picker = ImagePicker();
+    final src = source == 'camera' ? ImageSource.camera : ImageSource.gallery;
+    final xfile = await picker.pickImage(source: src, imageQuality: 85);
+    if (xfile == null) return;
+    // Encode as data URL so the backend continues receiving the same format.
+    String base64Url;
+    if (kIsWeb) {
+      final bytes = await xfile.readAsBytes();
+      base64Url = 'data:image/${xfile.name.split('.').last};base64,${base64Encode(bytes)}';
+    } else {
+      final bytes = await File(xfile.path).readAsBytes();
+      base64Url = 'data:image/${xfile.path.split('.').last};base64,${base64Encode(bytes)}';
+    }
+    setState(() => _imageBase64 = base64Url);
+    await ApiService.instance.updateProfile({'avatar': base64Url});
+    if (mounted) Navigator.pop(context);
+    _snack('Photo updated! ✅');
   }
 
   void _pickPhoto() {

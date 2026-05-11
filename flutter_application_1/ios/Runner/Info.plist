@@ -7,7 +7,18 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Flutter Application 1</string>
+	<string>ChargeGuard</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>ChargeGuard needs your location to find nearby charging stations and plan trips.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ChargeGuard uses the camera to take photos of your ID, business license, and profile picture.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ChargeGuard uses your photo library to upload your ID, business license, and profile picture.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

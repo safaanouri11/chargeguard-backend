@@ -1,6 +1,8 @@
 import 'dart:convert';
-import 'dart:html' as html;
+import 'dart:io' show File;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../utils/constants.dart';
 import '../utils/api_service.dart';
 import 'host_pending_screen.dart';
@@ -36,25 +38,20 @@ class _HostSignupScreenState extends State<HostSignupScreen> {
     super.dispose();
   }
 
-  // Upload image via HTML file input
+  // Pick image via cross-platform image_picker (camera on mobile, gallery on web)
   Future<void> _pickImage(bool isId) async {
-    final input = html.FileUploadInputElement()..accept = 'image/*';
-    input.click();
-    input.onChange.listen((e) {
-      final files = input.files;
-      if (files == null || files.isEmpty) return;
-      final reader = html.FileReader();
-      reader.readAsDataUrl(files[0]);
-      reader.onLoadEnd.listen((e) {
-        final base64 = reader.result as String;
-        setState(() {
-          if (isId) {
-            _idImage = base64;
-          } else {
-            _licenseImage = base64;
-          }
-        });
-      });
+    final picker = ImagePicker();
+    final xfile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (xfile == null) return;
+    final bytes = kIsWeb ? await xfile.readAsBytes() : await File(xfile.path).readAsBytes();
+    final ext = (xfile.name.contains('.') ? xfile.name.split('.').last : 'jpg').toLowerCase();
+    final base64Url = 'data:image/$ext;base64,${base64Encode(bytes)}';
+    setState(() {
+      if (isId) {
+        _idImage = base64Url;
+      } else {
+        _licenseImage = base64Url;
+      }
     });
   }
 

@@ -1,14 +1,28 @@
 import 'dart:convert';
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import 'storage.dart';
 
 // ════════════════════════════════════════
 //  API SERVICE — ChargeGuard Backend
 // ════════════════════════════════════════
 class ApiService {
-  static const String baseUrl = 'http://localhost:3000/api';
+  // Override at runtime via --dart-define=API_URL=...
+  // - Android emulator can't reach `localhost`; use 10.0.2.2 (Android-specific
+  //   alias for the host machine).
+  // - iOS simulator + web both use plain localhost.
+  // - On a real device, override with your machine's LAN IP or your
+  //   deployed URL via --dart-define.
+  static const String _override = String.fromEnvironment('API_URL');
+  static String get baseUrl {
+    if (_override.isNotEmpty) return _override;
+    if (kIsWeb) return 'http://localhost:3000/api';
+    if (Platform.isAndroid) return 'http://10.0.2.2:3000/api';
+    return 'http://localhost:3000/api'; // iOS sim, macOS, Linux, Windows
+  }
 
   // Singleton
   static final ApiService instance = ApiService._();
@@ -19,22 +33,22 @@ class ApiService {
   String? get token => _token;
   bool get isLoggedIn => _token != null;
 
-  // ── Save token to localStorage ───────────────────────────
-  void setToken(String token) {
+  // ── Save token to persistent storage ─────────────────────
+  Future<void> setToken(String token) async {
     _token = token;
-    html.window.localStorage['cg_token'] = token;
+    await Storage.set('cg_token', token);
   }
 
-  void clearToken() {
+  Future<void> clearToken() async {
     _token = null;
-    html.window.localStorage.remove('cg_token');
-    html.window.localStorage.remove('cg_user');
+    await Storage.remove('cg_token');
+    await Storage.remove('cg_user');
   }
 
-  // ── Load token from localStorage on app start ────────────
+  // ── Load token from storage on app start ─────────────────
   Future<bool> tryAutoLogin() async {
-    final token    = html.window.localStorage['cg_token'];
-    final userJson = html.window.localStorage['cg_user'];
+    final token    = await Storage.get('cg_token');
+    final userJson = await Storage.get('cg_user');
     if (token == null || userJson == null) return false;
 
     try {
@@ -46,8 +60,7 @@ class ApiService {
         if (result['success']) {
           final data = result['data'] as Map<String, dynamic>;
           UserSession.instance.setUser(data);
-          // Update localStorage with fresh data
-          html.window.localStorage['cg_user'] = jsonEncode(data);
+          Storage.set('cg_user', jsonEncode(data));
         }
       });
       return true;
@@ -98,9 +111,9 @@ class ApiService {
       );
       final result = await _handleResponse(res);
       if (result['success']) {
-        setToken(result['data']['token']);
+        await setToken(result['data']['token']);
         UserSession.instance.setUser(result['data']);
-        html.window.localStorage['cg_user'] = jsonEncode(result['data']);
+        await Storage.set('cg_user', jsonEncode(result['data']));
       }
       return result;
     } catch (e) {
@@ -122,16 +135,14 @@ class ApiService {
       );
       final result = await _handleResponse(res);
       if (result['success']) {
-        setToken(result['data']['token']);
+        await setToken(result['data']['token']);
         UserSession.instance.setUser(result['data']);
         if (rememberMe) {
-          // Save to localStorage — persists after browser close
-          html.window.localStorage['cg_token'] = result['data']['token'];
-          html.window.localStorage['cg_user']  = jsonEncode(result['data']);
+          await Storage.set('cg_token', result['data']['token']);
+          await Storage.set('cg_user',  jsonEncode(result['data']));
         } else {
-          // Clear localStorage — session only
-          html.window.localStorage.remove('cg_token');
-          html.window.localStorage.remove('cg_user');
+          await Storage.remove('cg_token');
+          await Storage.remove('cg_user');
         }
       }
       return result;
@@ -319,16 +330,25 @@ class ApiService {
     }
   }
 
-  // Try to get user's current location via browser geolocation API.
-  // Returns null if unavailable or denied.
+  // Cross-platform current location via geolocator (works on web + mobile +
+  // desktop). Returns null on permission denial, service-off, or timeout.
   Future<Map<String, double>?> getCurrentPosition({Duration timeout = const Duration(seconds: 8)}) async {
     try {
-      final pos = await html.window.navigator.geolocation
-          .getCurrentPosition(enableHighAccuracy: false, timeout: timeout);
-      final lat = pos.coords?.latitude;
-      final lng = pos.coords?.longitude;
-      if (lat == null || lng == null) return null;
-      return {'lat': lat.toDouble(), 'lng': lng.toDouble()};
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        return null;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: timeout,
+        ),
+      );
+      return {'lat': pos.latitude, 'lng': pos.longitude};
     } catch (_) {
       return null;
     }
@@ -543,11 +563,11 @@ class ApiService {
         // Update UserSession with fresh data
         final data = result['data'] as Map<String, dynamic>;
         UserSession.instance.setUser({...?UserSession.instance.user, ...data});
-        // Update localStorage
-        final stored = html.window.localStorage['cg_user'];
+        // Update persistent storage
+        final stored = await Storage.get('cg_user');
         if (stored != null) {
           final old = jsonDecode(stored) as Map<String, dynamic>;
-          html.window.localStorage['cg_user'] = jsonEncode({...old, ...data});
+          await Storage.set('cg_user', jsonEncode({...old, ...data}));
         }
       }
       return result;
@@ -619,9 +639,9 @@ class ApiService {
       final result = await _handleResponse(res);
       if (result['success']) {
         final data = result['data'] as Map<String, dynamic>;
-        setToken(data['token'] as String);
+        await setToken(data['token'] as String);
         UserSession.instance.setUser(data);
-        html.window.localStorage['cg_user'] = jsonEncode(data);
+        await Storage.set('cg_user', jsonEncode(data));
       }
       return result;
     } catch (e) {
