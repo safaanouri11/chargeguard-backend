@@ -995,6 +995,78 @@ class ApiService {
     }
   }
 
+  // ── Trips + Battery (Tessie-style tracking) ──────────────
+  Future<Map<String, dynamic>> getTrips({int limit = 50}) async {
+    try {
+      final res = await http.get(
+          Uri.parse('$baseUrl/trips?limit=$limit'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getTrip(String id) async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/trips/$id'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getTripStats() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/trips/stats'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getBatteryHistory({int limit = 200}) async {
+    try {
+      final res = await http.get(
+          Uri.parse('$baseUrl/trips/battery/history?limit=$limit'),
+          headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getBatteryHealth() async {
+    try {
+      final res = await http.get(
+          Uri.parse('$baseUrl/trips/battery/health'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> recordBatteryReading({
+    required int batteryPct,
+    String source = 'manual',
+    double? kwhDelta,
+    String? stationId,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'batteryPct': batteryPct, 'source': source,
+      };
+      if (kwhDelta != null) body['kwhDelta'] = kwhDelta;
+      if (stationId != null) body['stationId'] = stationId;
+      final res = await http.post(
+        Uri.parse('$baseUrl/trips/battery/reading'),
+        headers: _headers, body: jsonEncode(body),
+      );
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
   // ── AI Recommendation ────────────────────────────────────
   Future<Map<String, dynamic>> getRecommendation() async {
     try {

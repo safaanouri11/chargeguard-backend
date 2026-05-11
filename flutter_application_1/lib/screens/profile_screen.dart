@@ -14,6 +14,9 @@ import 'payment_methods_screen.dart';
 import 'camera_screen.dart';
 import 'referrals_screen.dart';
 import 'loyalty_screen.dart';
+import 'trips_screen.dart';
+import 'battery_health_screen.dart';
+import 'charging_analytics_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -461,6 +464,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => goTo(context, const ReferralsScreen())),
             _menu(Icons.workspace_premium_outlined, 'Loyalty Program', 'Tier, points & rewards',
                 onTap: () => goTo(context, const LoyaltyScreen())),
+            _menu(Icons.route_outlined, 'My Trips', 'Charging sessions & history',
+                onTap: () => goTo(context, const TripsScreen())),
+            _menu(Icons.battery_charging_full, 'Battery Health', 'Range & charge cycles',
+                onTap: () => goTo(context, const BatteryHealthScreen())),
+            _menu(Icons.insert_chart_outlined, 'Analytics', 'Charging stats & graphs',
+                onTap: () => goTo(context, const ChargingAnalyticsScreen())),
             _menu(Icons.credit_card_outlined, 'Payment Methods',  'Manage your cards',
                 onTap: () => goTo(context, const PaymentMethodsScreen())),
             _menu(Icons.help_outline,         'Help & Support',   'FAQ & contact us',
