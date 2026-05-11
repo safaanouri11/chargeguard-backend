@@ -427,7 +427,7 @@ class ApiService {
       );
       final result = await _handleResponse(res);
       if (result['success']) {
-        UserSession.instance.updateBalance(result['data']['balance']);
+        UserSession.instance.updateBalanceFromJson(result['data']['balance']);
       }
       return result;
     } catch (e) {
@@ -1208,7 +1208,7 @@ class ApiService {
       );
       final result = await _handleResponse(res);
       if (result['success']) {
-        UserSession.instance.updateBalance(result['data']['balance']);
+        UserSession.instance.updateBalanceFromJson(result['data']['balance']);
       }
       return result;
     } catch (e) {
@@ -1262,6 +1262,14 @@ class UserSession extends ChangeNotifier {
       _user!['balance'] = newBalance;
       notifyListeners();
     }
+  }
+
+  // Accepts any numeric (int or double) from JSON and coerces to double.
+  void updateBalanceFromJson(dynamic raw) {
+    if (raw == null) return;
+    final n = (raw is num) ? raw.toDouble() : double.tryParse(raw.toString());
+    if (n == null) return;
+    updateBalance(n);
   }
 
   void setAvatar(String base64) {

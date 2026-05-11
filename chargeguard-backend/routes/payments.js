@@ -15,11 +15,15 @@ router.get('/transactions', protect, async function(req, res) {
 // POST /api/payments/topup
 router.post('/topup', protect, async function(req, res) {
   try {
-    var amount = req.body.amount;
+    var amount = Number(req.body.amount);
+    if (!isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ message: 'Amount must be a positive number' });
+    }
     var user = await User.findByIdAndUpdate(
       req.user._id, { $inc: { balance: amount } }, { new: true }
     ).select('-password');
-    await Transaction.create({ user: req.user._id, label: 'Wallet Top Up', amount, type: 'topup' });
+    await Transaction.create({ user: req.user._id, label: 'Wallet Top Up', amount: amount, type: 'topup' });
+    console.log('Top Up ' + amount + ' NIS by ' + user.email + ' (new balance: ' + user.balance + ')');
     res.json({ balance: user.balance });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -28,7 +32,11 @@ router.post('/topup', protect, async function(req, res) {
 // POST /api/payments/transfer
 router.post('/transfer', protect, async function(req, res) {
   try {
-    var { amount, typeName } = req.body;
+    var amount = Number(req.body.amount);
+    if (!isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ message: 'Amount must be a positive number' });
+    }
+    var typeName = req.body.typeName;
     var user = await User.findById(req.user._id);
     if (user.balance < amount) return res.status(400).json({ message: 'Insufficient balance' });
     var updated = await User.findByIdAndUpdate(
