@@ -84,12 +84,12 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushReplacementNamed(context, '/home');
         }
       } else {
-        _snack(result['message'] ?? 'Invalid email or password');
+        _snack(result['message'] ?? L.invalidLogin);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        _snack('Connection error: $e');
+        _snack('${L.connectionError}: $e');
       }
     }
   }
@@ -131,7 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (role == 'admin') {
           Navigator.pushReplacementNamed(context, '/admin');
         } else if (role == 'host') {
-          final status = user['hostStatus'] as String? ?? 'Approved';
+          final status = user.hostStatus;
           if (status == 'Approved') {
             Navigator.pushReplacementNamed(context, '/host');
           } else {
@@ -141,12 +141,12 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushReplacementNamed(context, '/home');
         }
       } else {
-        _snack(result['message'] ?? 'Invalid email or password');
+        _snack(result['message'] ?? L.invalidLogin);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        _snack('Connection error: $e');
+        _snack('${L.connectionError}: $e');
       }
     }
   }
