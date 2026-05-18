@@ -215,6 +215,10 @@ class _LoginScreenState extends State<LoginScreen> {
     // Rebuild this screen when the language toggle flips so all L.*
     // strings re-evaluate with the new locale.
     _settings.addListener(_refresh);
+    // If the user landed on /login directly (e.g. Chrome remembered the
+    // URL hash and bypassed the splash), still honor Remember Me by
+    // attempting auto-login. If a token exists, route to the right place.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryAutoLoginOnArrival());
     _videoCtrl = VideoPlayerController.asset('assets/videos/bg.mp4')
       ..initialize().then((_) {
         _videoCtrl.setLooping(true);
@@ -222,6 +226,24 @@ class _LoginScreenState extends State<LoginScreen> {
         _videoCtrl.play();
         if (mounted) setState(() => _videoReady = true);
       }).catchError((e) => debugPrint('Video: $e'));
+  }
+
+  Future<void> _tryAutoLoginOnArrival() async {
+    if (ApiService.instance.isLoggedIn) return;
+    final ok = await ApiService.instance.tryAutoLogin();
+    if (!mounted) return;
+    if (ok) {
+      final role = UserSession.instance.role;
+      if (role == 'admin') {
+        Navigator.pushReplacementNamed(context, '/admin');
+      } else if (role == 'host') {
+        final status = UserSession.instance.hostStatus;
+        Navigator.pushReplacementNamed(
+            context, status == 'Approved' ? '/host' : '/host-pending');
+      } else {
+        Navigator.pushReplacementNamed(context, '/home');
+      }
+    }
   }
 
   void _refresh() => setState(() {});
