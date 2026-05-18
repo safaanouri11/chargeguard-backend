@@ -5,6 +5,7 @@ import '../utils/constants.dart';
 import '../utils/api_service.dart';
 import '../utils/app_settings.dart';
 import '../utils/biometric.dart';
+import '../utils/storage.dart';
 import 'signup_screen.dart';
 import 'host_signup_screen.dart';
 
@@ -243,6 +244,14 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         Navigator.pushReplacementNamed(context, '/home');
       }
+      return;
+    }
+    // No active session — but if we remember who they were, send them to
+    // Welcome Back so they only need their password.
+    final lastUser = await Storage.get('cg_last_user');
+    if (!mounted) return;
+    if (lastUser != null) {
+      Navigator.pushReplacementNamed(context, '/welcome-back');
     }
   }
 

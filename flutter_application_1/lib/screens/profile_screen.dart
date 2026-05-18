@@ -482,9 +482,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             // ── Logout ───────────────────────────────────────
             GestureDetector(
-              onTap: () {
-                ApiService.instance.logout();
-                Navigator.pushReplacementNamed(context, '/login');
+              onTap: () async {
+                await ApiService.instance.logout();
+                if (!context.mounted) return;
+                // After logout the saved cg_last_user is still around, so
+                // route to the splash — it will pick Welcome Back vs Login
+                // based on storage state.
+                Navigator.pushNamedAndRemoveUntil(context, '/splash', (_) => false);
               },
               child: Container(width: double.infinity, padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(color: Colors.red.withOpacity(0.07),
