@@ -34,9 +34,10 @@ class ApiService {
   bool get isLoggedIn => _token != null;
 
   // ── Save token to persistent storage ─────────────────────
-  Future<void> setToken(String token) async {
+  // setToken only updates the in-memory token; persistence is decided by
+  // the login flow based on the "remember me" choice.
+  void setToken(String token) {
     _token = token;
-    await Storage.set('cg_token', token);
   }
 
   Future<void> clearToken() async {
@@ -111,9 +112,11 @@ class ApiService {
       );
       final result = await _handleResponse(res);
       if (result['success']) {
-        await setToken(result['data']['token']);
+        setToken(result['data']['token']);
         UserSession.instance.setUser(result['data']);
-        await Storage.set('cg_user', jsonEncode(result['data']));
+        // New registrations are always remembered.
+        await Storage.set('cg_token', result['data']['token']);
+        await Storage.set('cg_user',  jsonEncode(result['data']));
       }
       return result;
     } catch (e) {
@@ -135,8 +138,10 @@ class ApiService {
       );
       final result = await _handleResponse(res);
       if (result['success']) {
-        await setToken(result['data']['token']);
+        setToken(result['data']['token']);
         UserSession.instance.setUser(result['data']);
+        // Persistence is gated on the rememberMe choice. If the user opted
+        // out, make sure we also clear anything previously stored.
         if (rememberMe) {
           await Storage.set('cg_token', result['data']['token']);
           await Storage.set('cg_user',  jsonEncode(result['data']));
@@ -639,8 +644,9 @@ class ApiService {
       final result = await _handleResponse(res);
       if (result['success']) {
         final data = result['data'] as Map<String, dynamic>;
-        await setToken(data['token'] as String);
+        setToken(data['token'] as String);
         UserSession.instance.setUser(data);
+        await Storage.set('cg_token', data['token'] as String);
         await Storage.set('cg_user', jsonEncode(data));
       }
       return result;

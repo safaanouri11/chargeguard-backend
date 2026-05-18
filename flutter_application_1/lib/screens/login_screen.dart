@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import '../utils/constants.dart';
 import '../utils/api_service.dart';
+import '../utils/app_settings.dart';
 import 'signup_screen.dart';
 import 'host_signup_screen.dart';
 
@@ -14,13 +16,23 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl  = TextEditingController();
+  final _passFocus = FocusNode();
 
   late VideoPlayerController _videoCtrl;
 
   bool _obscure    = true;
-  bool _rememberMe = false;
+  // Default to true — most apps remember by default, and the user has the
+  // option to opt out by unchecking. Avoids surprising sign-outs.
+  bool _rememberMe = true;
   bool _videoReady = false;
   bool _loading    = false;
+
+  String? _emailError() {
+    final v = _emailCtrl.text.trim();
+    if (v.isEmpty) return null;
+    final ok = RegExp(r"^[^@\s]+@[^@\s]+\.[^@\s]+$").hasMatch(v);
+    return ok ? null : 'Enter a valid email address';
+  }
 
   // ── Login ──────────────────────────────────────────────
   Future<void> _login() async {
@@ -29,6 +41,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (email.isEmpty || password.isEmpty) {
       _snack('Please enter email and password');
+      return;
+    }
+    if (_emailError() != null) {
+      _snack(_emailError()!);
       return;
     }
 
@@ -85,12 +101,15 @@ class _LoginScreenState extends State<LoginScreen> {
       final result = await ApiService.instance.login(
         email:    email,
         password: password,
+        rememberMe: _rememberMe,
       );
 
       if (!mounted) return;
       setState(() => _loading = false);
 
       if (result['success'] == true) {
+        // ignore: use_build_context_synchronously
+        TextInput.finishAutofillContext();
         final user = result['data'] as Map<String, dynamic>;
         final role = user['role'] as String? ?? 'driver';
 
@@ -156,6 +175,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _videoCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
+    _passFocus.dispose();
     super.dispose();
   }
 
@@ -180,10 +200,10 @@ class _LoginScreenState extends State<LoginScreen> {
         SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child: AutofillGroup(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const SizedBox(height: 48),
 
-              // Logo
+              // Logo + Language toggle
               Row(children: [
                 Container(width: 52, height: 52,
                   decoration: BoxDecoration(color: kGreen.withOpacity(0.12),
@@ -193,6 +213,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(width: 12),
                 const Text('ChargeGuard',
                     style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+                const Spacer(),
+                _LangToggle(),
               ]),
               const SizedBox(height: 48),
 
@@ -208,16 +230,27 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.email, AutofillHints.username],
+                onSubmitted: (_) => _passFocus.requestFocus(),
                 onChanged: (_) => setState(() {}),
                 style: const TextStyle(color: Colors.white, fontSize: 15),
-                decoration: _deco(hint: 'example@email.com', icon: Icons.email_outlined)),
+                decoration: _deco(
+                  hint: 'example@email.com',
+                  icon: Icons.email_outlined,
+                  errorText: _emailError(),
+                )),
               const SizedBox(height: 16),
 
               // Password
               _lbl('Password'),
               TextField(
                 controller: _passCtrl,
+                focusNode: _passFocus,
                 obscureText: _obscure,
+                textInputAction: TextInputAction.done,
+                autofillHints: const [AutofillHints.password],
+                onSubmitted: (_) => _loading ? null : _login(),
                 onChanged: (_) => setState(() {}),
                 style: const TextStyle(color: Colors.white, fontSize: 15),
                 decoration: _deco(
@@ -231,21 +264,29 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // Remember + Forgot
               Row(children: [
-                GestureDetector(
+                InkWell(
                   onTap: () => setState(() => _rememberMe = !_rememberMe),
-                  child: Row(children: [
-                    AnimatedContainer(duration: const Duration(milliseconds: 200),
-                      width: 20, height: 20,
-                      decoration: BoxDecoration(
-                        color: _rememberMe ? kGreen : Colors.transparent,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: _rememberMe ? kGreen : kBorder, width: 1.5)),
-                      child: _rememberMe
-                          ? const Icon(Icons.check, size: 13, color: Colors.black) : null),
-                    const SizedBox(width: 8),
-                    const Text('Remember me',
-                        style: TextStyle(color: Colors.white54, fontSize: 13)),
-                  ]),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    child: Row(children: [
+                      AnimatedContainer(duration: const Duration(milliseconds: 200),
+                        width: 22, height: 22,
+                        decoration: BoxDecoration(
+                          color: _rememberMe ? kGreen : Colors.transparent,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: _rememberMe ? kGreen : Colors.white54, width: 1.8)),
+                        child: _rememberMe
+                            ? const Icon(Icons.check, size: 15, color: Colors.black) : null),
+                      const SizedBox(width: 10),
+                      Text('Remember me',
+                          style: TextStyle(
+                              color: _rememberMe ? Colors.white : Colors.white54,
+                              fontSize: 13,
+                              fontWeight: _rememberMe ? FontWeight.w600 : FontWeight.w500)),
+                    ]),
+                  ),
                 ),
                 const Spacer(),
                 GestureDetector(
@@ -300,8 +341,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     MaterialPageRoute(builder: (_) => const HostSignupScreen())),
                 child: const Text('Become a Host →',
                     style: TextStyle(color: kGreen, fontSize: 13, fontWeight: FontWeight.w700)))),
-              const SizedBox(height: 32),
-            ]),
+              const SizedBox(height: 24),
+
+              // Version footer
+              Center(child: Text('v1.0.0',
+                  style: const TextStyle(color: Colors.white24, fontSize: 11))),
+              const SizedBox(height: 16),
+            ])),
           ),
         ),
       ]),
@@ -312,18 +358,60 @@ class _LoginScreenState extends State<LoginScreen> {
     child: Text(t, style: const TextStyle(
         color: Colors.white54, fontSize: 13, fontWeight: FontWeight.w600)));
 
-  InputDecoration _deco({required String hint, required IconData icon, Widget? suffix}) =>
+  InputDecoration _deco({required String hint, required IconData icon, Widget? suffix, String? errorText}) =>
     InputDecoration(
       hintText: hint, hintStyle: const TextStyle(color: Colors.white30),
       prefixIcon: Icon(icon, color: Colors.white38, size: 20),
       suffixIcon: suffix,
       filled: true, fillColor: kCard,
+      errorText: errorText,
+      errorStyle: const TextStyle(color: Color(0xFFFF8A80), fontSize: 11),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: kBorder)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: kBorder)),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: kGreen, width: 1.5)));
+          borderSide: const BorderSide(color: kGreen, width: 1.5)),
+      errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFFF8A80))),
+      focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFFF8A80), width: 1.5)));
+}
+
+// ─────────────────────────────────────────────────────────
+//  Language toggle (English ↔ Arabic) — top-right of login
+// ─────────────────────────────────────────────────────────
+class _LangToggle extends StatefulWidget {
+  @override
+  State<_LangToggle> createState() => _LangToggleState();
+}
+
+class _LangToggleState extends State<_LangToggle> {
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    return GestureDetector(
+      onTap: () {
+        s.toggleLanguage();
+        setState(() {});
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.language, color: Colors.white70, size: 14),
+          const SizedBox(width: 5),
+          Text(s.isArabic ? 'EN' : 'AR',
+              style: const TextStyle(
+                  color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700)),
+        ]),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────
