@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 import '../utils/app_settings.dart';
+import '../utils/biometric.dart';
 import 'privacy_policy_screen.dart';
 import 'terms_screen.dart';
 
@@ -13,11 +14,23 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _s = AppSettings.instance;
   bool _biometric = false;
+  bool _biometricAvailable = false;
 
   @override
   void initState() {
     super.initState();
     _s.addListener(_refresh);
+    _loadBiometric();
+  }
+
+  Future<void> _loadBiometric() async {
+    final available = await Biometric.available();
+    final enabled = await Biometric.isEnabled();
+    if (!mounted) return;
+    setState(() {
+      _biometricAvailable = available;
+      _biometric = enabled;
+    });
   }
 
   @override
@@ -134,6 +147,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ── Biometric Login ───────────────────────────────────────
   void _toggleBiometric(bool val) {
+    if (val && !_biometricAvailable) {
+      _snack('Biometric is not available on this device');
+      return;
+    }
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -154,9 +171,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           TextButton(onPressed: () => Navigator.pop(context),
               child: Text('Cancel', style: TextStyle(color: cSub))),
           ElevatedButton(
-            onPressed: () {
-              setState(() => _biometric = val);
+            onPressed: () async {
               Navigator.pop(context);
+              if (val) {
+                // Enabling requires a successful biometric auth right now.
+                final ok = await Biometric.authenticate(
+                    reason: 'Confirm biometric setup');
+                if (!ok) {
+                  if (mounted) _snack('Biometric confirmation cancelled');
+                  return;
+                }
+              }
+              await Biometric.setEnabled(val);
+              if (!mounted) return;
+              setState(() => _biometric = val);
               _snack(val ? '🔐 Biometric login enabled!' : 'Biometric login disabled');
             },
             style: ElevatedButton.styleFrom(
