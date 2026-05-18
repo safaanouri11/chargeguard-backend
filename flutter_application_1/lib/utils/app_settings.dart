@@ -87,4 +87,23 @@ class L {
   static String get upcoming      => _ar ? 'قادم'        : 'Upcoming';
   static String get completed     => _ar ? 'مكتمل'       : 'Completed';
   static String get cancelled     => _ar ? 'ملغى'        : 'Cancelled';
+
+  // ── Login screen ───────────────────────────────────────
+  static String get welcomeBack    => _ar ? 'مرحباً بعودتك!'      : 'Welcome Back!';
+  static String get loginSubtitle  => _ar ? 'سجّل دخول لتكمل الشحن' : 'Login to continue charging';
+  static String get emailAddress   => _ar ? 'البريد الإلكتروني'   : 'Email Address';
+  static String get emailHint      => _ar ? 'مثال@email.com'      : 'example@email.com';
+  static String get password       => _ar ? 'كلمة المرور'         : 'Password';
+  static String get passwordHint   => _ar ? 'أدخل كلمة المرور'    : 'Enter your password';
+  static String get rememberMe     => _ar ? 'تذكّرني'             : 'Remember me';
+  static String get forgotPassword => _ar ? 'نسيت كلمة المرور؟'   : 'Forgot password?';
+  static String get login          => _ar ? 'تسجيل الدخول'        : 'Login';
+  static String get imCharger      => _ar ? 'أنا صاحب شاحن'        : "I'm a Charger Host";
+  static String get noAccount      => _ar ? 'ما عندك حساب؟ '       : "Don't have an account? ";
+  static String get signUp         => _ar ? 'سجّل الآن'           : 'Sign Up';
+  static String get becomeHost     => _ar ? 'كن مضيفاً ←'         : 'Become a Host →';
+  static String get enterEmailPass => _ar ? 'الرجاء إدخال البريد وكلمة المرور' : 'Please enter email and password';
+  static String get invalidEmail   => _ar ? 'بريد إلكتروني غير صالح' : 'Enter a valid email address';
+  static String get invalidLogin   => _ar ? 'بريد أو كلمة مرور غير صحيحة' : 'Invalid email or password';
+  static String get connectionError=> _ar ? 'خطأ في الاتصال'      : 'Connection error';
 }

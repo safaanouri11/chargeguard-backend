@@ -18,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl  = TextEditingController();
   final _passFocus = FocusNode();
+  final _settings  = AppSettings.instance;
 
   late VideoPlayerController _videoCtrl;
 
@@ -32,7 +33,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final v = _emailCtrl.text.trim();
     if (v.isEmpty) return null;
     final ok = RegExp(r"^[^@\s]+@[^@\s]+\.[^@\s]+$").hasMatch(v);
-    return ok ? null : 'Enter a valid email address';
+    return ok ? null : L.invalidEmail;
   }
 
   // ── Login ──────────────────────────────────────────────
@@ -41,7 +42,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passCtrl.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      _snack('Please enter email and password');
+      _snack(L.enterEmailPass);
       return;
     }
     if (_emailError() != null) {
@@ -99,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passCtrl.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      _snack('Please enter email and password');
+      _snack(L.enterEmailPass);
       return;
     }
 
@@ -211,6 +212,9 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    // Rebuild this screen when the language toggle flips so all L.*
+    // strings re-evaluate with the new locale.
+    _settings.addListener(_refresh);
     _videoCtrl = VideoPlayerController.asset('assets/videos/bg.mp4')
       ..initialize().then((_) {
         _videoCtrl.setLooping(true);
@@ -220,8 +224,11 @@ class _LoginScreenState extends State<LoginScreen> {
       }).catchError((e) => debugPrint('Video: $e'));
   }
 
+  void _refresh() => setState(() {});
+
   @override
   void dispose() {
+    _settings.removeListener(_refresh);
     _videoCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
@@ -268,15 +275,15 @@ class _LoginScreenState extends State<LoginScreen> {
               ]),
               const SizedBox(height: 48),
 
-              const Text('Welcome Back!',
-                  style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900)),
+              Text(L.welcomeBack,
+                  style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),
-              const Text('Login to continue charging',
-                  style: TextStyle(color: Colors.white54, fontSize: 15)),
+              Text(L.loginSubtitle,
+                  style: const TextStyle(color: Colors.white54, fontSize: 15)),
               const SizedBox(height: 36),
 
               // Email
-              _lbl('Email Address'),
+              _lbl(L.emailAddress),
               TextField(
                 controller: _emailCtrl,
                 keyboardType: TextInputType.emailAddress,
@@ -286,14 +293,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 onChanged: (_) => setState(() {}),
                 style: const TextStyle(color: Colors.white, fontSize: 15),
                 decoration: _deco(
-                  hint: 'example@email.com',
+                  hint: L.emailHint,
                   icon: Icons.email_outlined,
                   errorText: _emailError(),
                 )),
               const SizedBox(height: 16),
 
               // Password
-              _lbl('Password'),
+              _lbl(L.password),
               TextField(
                 controller: _passCtrl,
                 focusNode: _passFocus,
@@ -304,7 +311,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 onChanged: (_) => setState(() {}),
                 style: const TextStyle(color: Colors.white, fontSize: 15),
                 decoration: _deco(
-                  hint: 'Enter your password',
+                  hint: L.passwordHint,
                   icon: Icons.lock_outline,
                   suffix: IconButton(
                     icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
@@ -330,7 +337,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: _rememberMe
                             ? const Icon(Icons.check, size: 15, color: Colors.black) : null),
                       const SizedBox(width: 10),
-                      Text('Remember me',
+                      Text(L.rememberMe,
                           style: TextStyle(
                               color: _rememberMe ? Colors.white : Colors.white54,
                               fontSize: 13,
@@ -341,8 +348,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 const Spacer(),
                 GestureDetector(
                   onTap: _forgotPassword,
-                  child: const Text('Forgot password?',
-                      style: TextStyle(color: kGreen, fontSize: 13, fontWeight: FontWeight.w600))),
+                  child: Text(L.forgotPassword,
+                      style: const TextStyle(color: kGreen, fontSize: 13, fontWeight: FontWeight.w600))),
               ]),
               const SizedBox(height: 32),
 
@@ -357,8 +364,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: _loading
                       ? const SizedBox(width: 22, height: 22,
                           child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2.5))
-                      : const Text('Login',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)))),
+                      : Text(L.login,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)))),
               const SizedBox(height: 14),
 
               // Host Button
@@ -366,8 +373,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: OutlinedButton.icon(
                   onPressed: _loading ? null : _goHost,
                   icon: const Icon(Icons.home_outlined, color: kGreen, size: 20),
-                  label: const Text("I'm a Charger Host",
-                      style: TextStyle(color: kGreen, fontSize: 15, fontWeight: FontWeight.w700)),
+                  label: Text(L.imCharger,
+                      style: const TextStyle(color: kGreen, fontSize: 15, fontWeight: FontWeight.w700)),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: kGreen, width: 1.5),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))))),
@@ -375,13 +382,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // Sign Up
               Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Text("Don't have an account? ",
-                    style: TextStyle(color: Colors.white54, fontSize: 14)),
+                Text(L.noAccount,
+                    style: const TextStyle(color: Colors.white54, fontSize: 14)),
                 GestureDetector(
                   onTap: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const SignupScreen())),
-                  child: const Text('Sign Up',
-                      style: TextStyle(color: kGreen, fontSize: 14, fontWeight: FontWeight.w700))),
+                  child: Text(L.signUp,
+                      style: const TextStyle(color: kGreen, fontSize: 14, fontWeight: FontWeight.w700))),
               ])),
               const SizedBox(height: 12),
 
@@ -389,8 +396,8 @@ class _LoginScreenState extends State<LoginScreen> {
               Center(child: GestureDetector(
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const HostSignupScreen())),
-                child: const Text('Become a Host →',
-                    style: TextStyle(color: kGreen, fontSize: 13, fontWeight: FontWeight.w700)))),
+                child: Text(L.becomeHost,
+                    style: const TextStyle(color: kGreen, fontSize: 13, fontWeight: FontWeight.w700)))),
               const SizedBox(height: 24),
 
               // Version footer
