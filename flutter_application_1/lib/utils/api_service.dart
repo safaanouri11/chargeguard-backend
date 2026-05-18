@@ -874,6 +874,136 @@ class ApiService {
     }
   }
 
+  // ── Admin — Extended (analytics, audit, broadcast, config, etc.) ──
+  Future<Map<String, dynamic>> getAdminAnalyticsFull() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/admin/analytics/full'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getAdminPendingCounts() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/admin/pending-counts'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getUserDetail(String id) async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/admin/users/$id'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> suspendUser(String id, {String reason = ''}) async {
+    try {
+      final res = await http.put(Uri.parse('$baseUrl/admin/users/$id/suspend'),
+          headers: _headers, body: jsonEncode({'reason': reason}));
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> adminResetUserPassword(String id, String password) async {
+    try {
+      final res = await http.post(Uri.parse('$baseUrl/admin/users/$id/reset-password'),
+          headers: _headers, body: jsonEncode({'password': password}));
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> broadcastNotification({
+    required String title,
+    required String body,
+    String target = 'all',
+    String link = '',
+  }) async {
+    try {
+      final res = await http.post(Uri.parse('$baseUrl/admin/broadcast'),
+          headers: _headers,
+          body: jsonEncode({'title': title, 'body': body, 'target': target, 'link': link}));
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getAuditLogs({int limit = 100}) async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/admin/audit-logs?limit=$limit'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getPlatformConfig() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/admin/config'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> updatePlatformConfig(Map<String, dynamic> changes) async {
+    try {
+      final res = await http.put(Uri.parse('$baseUrl/admin/config'),
+          headers: _headers, body: jsonEncode(changes));
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getLiveActivity() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/admin/live'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getFraudAlerts() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/admin/fraud/alerts'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  Future<Map<String, dynamic>> getAdminInsights() async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/admin/insights'), headers: _headers);
+      return await _handleResponse(res);
+    } catch (e) {
+      return {'success': false, 'message': 'Connection error'};
+    }
+  }
+
+  // Returns the raw CSV body on success (or null on error).
+  Future<String?> exportCsv(String type) async {
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/admin/export/$type'), headers: _headers);
+      if (res.statusCode == 200) return res.body;
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // ── Offers ────────────────────────────────────────────────
   Future<Map<String, dynamic>> getOffers() async {
     try {

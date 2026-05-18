@@ -43,5 +43,13 @@ const userSchema = new mongoose.Schema({
     station:  { type: mongoose.Schema.Types.ObjectId, ref: 'Station' },
     viewedAt: { type: Date, default: Date.now },
   }],
+  // Admin moderation
+  suspended:        { type: Boolean, default: false },
+  suspendedReason:  { type: String, default: '' },
+  suspendedAt:      { type: Date,   default: null },
+  // Admin sub-role (only meaningful when role === 'admin').
+  // 'super' = full access; 'support' = tickets/users; 'finance' = payouts/revenue;
+  // 'moderation' = host approvals + reviews.
+  adminSubRole:     { type: String, default: 'super' },
 }, { timestamps: true });
 module.exports = mongoose.model('User', userSchema);

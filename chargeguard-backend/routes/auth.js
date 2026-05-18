@@ -111,6 +111,11 @@ router.post('/login', async function(req, res) {
     var match = await bcrypt.compare(password, user.password);
     console.log('Login attempt:', email, '| Match:', match);
     if (!match) return res.status(401).json({ message: 'Invalid email or password' });
+    if (user.suspended) {
+      return res.status(403).json({
+        message: 'Account suspended' + (user.suspendedReason ? ': ' + user.suspendedReason : ''),
+      });
+    }
     console.log('User logged in: ' + user.email);
     res.json({
       _id: user._id, firstName: user.firstName, lastName: user.lastName,
