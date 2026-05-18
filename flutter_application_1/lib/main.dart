@@ -12,6 +12,9 @@ import 'screens/bookmarks_screen.dart';
 import 'screens/host_dashboard_screen.dart';
 import 'screens/host_pending_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
+import 'screens/welcome_back_screen.dart';
+import 'utils/biometric.dart';
+import 'utils/storage.dart';
 
 void main() => runApp(const ChargeGuardApp());
 
@@ -83,6 +86,7 @@ class _ChargeGuardAppState extends State<ChargeGuardApp> {
       routes: {
         '/splash':        (context) => const SplashScreen(),
         '/login':         (context) => const LoginScreen(),
+        '/welcome-back':  (context) => const WelcomeBackScreen(),
         '/register':      (context) => const SignupScreen(),
         '/home':          (context) => const MainShell(),
         '/host':          (context) => const HostDashboardScreen(),
@@ -121,29 +125,53 @@ class _SplashScreenState extends State<SplashScreen>
     await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
 
-    // حاول Auto Login من localStorage
+    // 1. Biometric gate — if the user previously enabled it and we have a
+    //    saved token, require a successful biometric before auto-login.
+    final hasToken = (await Storage.get('cg_token')) != null;
+    if (hasToken && await Biometric.isEnabled()) {
+      final available = await Biometric.available();
+      if (available) {
+        final ok = await Biometric.authenticate(
+            reason: 'Sign in to ChargeGuard');
+        if (!ok) {
+          // Biometric failed/cancelled — fall through to Welcome Back.
+          if (!mounted) return;
+          Navigator.pushReplacementNamed(context, '/welcome-back');
+          return;
+        }
+      }
+    }
+
+    // 2. Standard auto-login path (Remember Me was on)
     final ok = await ApiService.instance.tryAutoLogin();
     if (!mounted) return;
-
     if (ok) {
-      final user = UserSession.instance;
-      final role = user.role;
+      _routeByRole();
+      return;
+    }
 
-      if (role == 'admin') {
-        Navigator.pushReplacementNamed(context, '/admin');
-      } else if (role == 'host') {
-        // Check host status
-        final status = user.user?['hostStatus'] as String? ?? 'Approved';
-        if (status == 'Approved') {
-          Navigator.pushReplacementNamed(context, '/host');
-        } else {
-          Navigator.pushReplacementNamed(context, '/host-pending');
-        }
-      } else {
-        Navigator.pushReplacementNamed(context, '/home');
-      }
+    // 3. No active session — but maybe we know who the user was.
+    //    Show Welcome Back so they only need their password.
+    final lastUser = await Storage.get('cg_last_user');
+    if (!mounted) return;
+    if (lastUser != null) {
+      Navigator.pushReplacementNamed(context, '/welcome-back');
     } else {
       Navigator.pushReplacementNamed(context, '/login');
+    }
+  }
+
+  void _routeByRole() {
+    final user = UserSession.instance;
+    final role = user.role;
+    if (role == 'admin') {
+      Navigator.pushReplacementNamed(context, '/admin');
+    } else if (role == 'host') {
+      final status = user.user?['hostStatus'] as String? ?? 'Approved';
+      Navigator.pushReplacementNamed(
+          context, status == 'Approved' ? '/host' : '/host-pending');
+    } else {
+      Navigator.pushReplacementNamed(context, '/home');
     }
   }
 

@@ -14,6 +14,8 @@
 	<string>ChargeGuard uses the camera to take photos of your ID, business license, and profile picture.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>ChargeGuard uses your photo library to upload your ID, business license, and profile picture.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>ChargeGuard uses Face ID for quick and secure sign-in.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

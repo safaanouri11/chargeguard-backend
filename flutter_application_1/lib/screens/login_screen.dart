@@ -4,6 +4,7 @@ import 'package:video_player/video_player.dart';
 import '../utils/constants.dart';
 import '../utils/api_service.dart';
 import '../utils/app_settings.dart';
+import '../utils/biometric.dart';
 import 'signup_screen.dart';
 import 'host_signup_screen.dart';
 
@@ -61,7 +62,14 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _loading = false);
 
       if (result['success'] == true) {
+        TextInput.finishAutofillContext();
+        // Offer biometric setup for next time (one-time prompt).
+        if (_rememberMe && await Biometric.available()
+            && !await Biometric.isEnabled()) {
+          if (mounted) await _offerBiometric();
+        }
         final role = UserSession.instance.role;
+        if (!mounted) return;
         if (role == 'admin') {
           Navigator.pushReplacementNamed(context, '/admin');
         } else if (role == 'host') {
@@ -110,8 +118,14 @@ class _LoginScreenState extends State<LoginScreen> {
       if (result['success'] == true) {
         // ignore: use_build_context_synchronously
         TextInput.finishAutofillContext();
-        final user = result['data'] as Map<String, dynamic>;
-        final role = user['role'] as String? ?? 'driver';
+        // Offer biometric for next time, only if device supports it AND
+        // user opted in to be remembered AND hasn't enabled it before.
+        if (_rememberMe && await Biometric.available()
+            && !await Biometric.isEnabled()) {
+          if (mounted) await _offerBiometric();
+        }
+        final user = UserSession.instance;
+        final role = user.role;
 
         if (role == 'admin') {
           Navigator.pushReplacementNamed(context, '/admin');
@@ -133,6 +147,42 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => _loading = false);
         _snack('Connection error: $e');
       }
+    }
+  }
+
+  // ── Offer Biometric (first-time after login) ──────────
+  Future<void> _offerBiometric() async {
+    final accept = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Row(children: const [
+          Icon(Icons.fingerprint, color: kGreen, size: 24),
+          SizedBox(width: 10),
+          Text('Enable biometric login?', style: TextStyle(color: Colors.white)),
+        ]),
+        content: const Text(
+          'Sign in with your fingerprint or face next time — '
+          'faster and just as secure. You can turn this off in Settings.',
+          style: TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Not now', style: TextStyle(color: Colors.white54))),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: kGreen, foregroundColor: Colors.black),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.check, size: 16),
+            label: const Text('Enable'),
+          ),
+        ],
+      ),
+    );
+    if (accept == true) {
+      final ok = await Biometric.authenticate(reason: 'Confirm biometric setup');
+      if (ok) await Biometric.setEnabled(true);
     }
   }
 

@@ -149,6 +149,14 @@ class ApiService {
           await Storage.remove('cg_token');
           await Storage.remove('cg_user');
         }
+        // Always remember the last user's display info — used by the
+        // Welcome Back screen even when rememberMe is off, so we can show
+        // "Sign in as Sara" without keeping their token around.
+        final d = result['data'] as Map<String, dynamic>;
+        await Storage.set('cg_last_user', jsonEncode({
+          'firstName': d['firstName'], 'lastName': d['lastName'],
+          'email': d['email'], 'avatar': d['avatar'],
+        }));
       }
       return result;
     } catch (e) {
@@ -156,10 +164,20 @@ class ApiService {
     }
   }
 
-  // Logout
-  void logout() {
+  // Logout — keeps cg_last_user for Welcome Back, clears auth state.
+  Future<void> logout() async {
     _token = null;
     UserSession.instance.clear();
+    await Storage.remove('cg_token');
+    await Storage.remove('cg_user');
+    // Also turn off biometric — the next person who logs in must opt in again.
+    await Storage.remove('cg_biometric_enabled');
+  }
+
+  // Hard sign-out — also forgets the last user (for "switch account").
+  Future<void> forgetAccount() async {
+    await logout();
+    await Storage.remove('cg_last_user');
   }
 
   // ════════════════════════════════════════
